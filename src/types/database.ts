@@ -341,6 +341,32 @@ export interface Database {
           collected_at: string;
         };
       };
+      verify_machine_status: {
+        Args: {
+          p_machine_id: string;
+          p_status: MachineStatus;
+          p_note?: string | null;
+        };
+        Returns: {
+          success: boolean;
+          machine_id: string;
+          status: MachineStatus;
+          note?: string | null;
+          verified_at: string;
+        };
+      };
+      force_clear_machine: {
+        Args: {
+          p_machine_id: string;
+          p_reason?: string;
+        };
+        Returns: {
+          success: boolean;
+          machine_id: string;
+          status: string;
+          cleared_at: string;
+        };
+      };
     };
     Enums: {
       machine_status: MachineStatus;

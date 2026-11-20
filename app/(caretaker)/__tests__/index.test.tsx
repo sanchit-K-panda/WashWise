@@ -1,0 +1,304 @@
+import React from 'react';
+import { render, fireEvent, waitFor, act, cleanup } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import CaretakerHomeScreen from '../index';
+import * as useAuthModule from '@/hooks/useAuth';
+import * as useMachinesModule from '@/hooks/useMachines';
+import * as caretakerService from '@/services/caretaker';
+import { MachineWithSession, HostelBlock, IssueReport } from '@/types';
+
+const mockPush = jest.fn();
+const mockSignOut = jest.fn();
+
+jest.mock('expo-router', () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: jest.fn(),
+  }),
+}));
+
+const mockBlock: HostelBlock = {
+  id: 'block-a',
+  name: 'Block A',
+  created_at: '',
+};
+
+const mockMachines: MachineWithSession[] = [
+  {
+    id: 'm1',
+    block_id: 'block-a',
+    label: '01',
+    capacity_kg: 7,
+    status: 'available',
+    status_updated_by: 'caretaker-1',
+    status_updated_at: '2026-11-20T10:30:00Z',
+    note: null,
+    created_at: '',
+  },
+  {
+    id: 'm2',
+    block_id: 'block-a',
+    label: '02',
+    capacity_kg: 7,
+    status: 'in_use',
+    status_updated_by: 'caretaker-1',
+    status_updated_at: '2026-11-20T09:15:00Z',
+    note: null,
+    timeLeftMinutes: 20,
+    created_at: '',
+  },
+  {
+    id: 'm3',
+    block_id: 'block-a',
+    label: '03',
+    capacity_kg: 8,
+    status: 'broken',
+    status_updated_by: 'caretaker-1',
+    status_updated_at: '',
+    note: 'Door latch fault',
+    created_at: '',
+  },
+];
+
+const mockIssues: IssueReport[] = [
+  {
+    id: 'issue-1',
+    machine_id: 'm3',
+    reported_by: 'student-1',
+    description: 'Drum not spinning during cycle',
+    created_at: '2026-11-20T10:00:00Z',
+    resolved_at: null,
+    resolved_by: null,
+  },
+];
+
+describe('CaretakerHomeScreen', () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+
+    jest.spyOn(useAuthModule, 'useAuth').mockReturnValue({
+      user: { id: 'caretaker-1' } as never,
+      profile: {
+        id: 'caretaker-1',
+        name: 'John Caretaker',
+        role: 'caretaker',
+        hostel_block_id: 'block-a',
+        created_at: '',
+        updated_at: '',
+      },
+      session: {} as never,
+      role: 'caretaker',
+      isLoading: false,
+      error: null,
+      signInWithOtp: jest.fn(),
+      verifyOtp: jest.fn(),
+      signOut: mockSignOut,
+      refreshProfile: jest.fn(),
+    });
+
+    jest.spyOn(caretakerService, 'fetchBlockIssues').mockResolvedValue(mockIssues);
+    jest.spyOn(caretakerService, 'updateMachineStatus').mockResolvedValue({ success: true });
+    jest.spyOn(caretakerService, 'forceClearMachine').mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  const renderScreen = async () =>
+    await render(
+      <QueryClientProvider client={queryClient}>
+        <CaretakerHomeScreen />
+      </QueryClientProvider>
+    );
+
+  it('renders machine list with machine labels and verified stamps', async () => {
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: mockMachines,
+      block: mockBlock,
+      totalCount: 3,
+      availableCount: 1,
+      inUseCount: 1,
+      brokenCount: 1,
+      maintenanceCount: 0,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { getByText, getByTestId } = await renderScreen();
+
+    expect(getByText('Machine verification')).toBeTruthy();
+    expect(getByTestId('caretaker-machine-row-01')).toBeTruthy();
+    expect(getByTestId('caretaker-machine-row-02')).toBeTruthy();
+    expect(getByTestId('caretaker-machine-row-03')).toBeTruthy();
+    expect(getByText(/Not verified today/)).toBeTruthy();
+  });
+
+  it('opens bottom sheet when a machine is tapped', async () => {
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: mockMachines,
+      block: mockBlock,
+      totalCount: 3,
+      availableCount: 1,
+      inUseCount: 1,
+      brokenCount: 1,
+      maintenanceCount: 0,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { getByTestId, getByText } = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(getByTestId('caretaker-machine-row-01'));
+    });
+
+    expect(getByTestId('verification-bottom-sheet')).toBeTruthy();
+    expect(getByText('Machine 01')).toBeTruthy();
+    expect(getByTestId('status-option-available')).toBeTruthy();
+    expect(getByTestId('status-option-maintenance')).toBeTruthy();
+    expect(getByTestId('status-option-broken')).toBeTruthy();
+  });
+
+  it('optimistically updates machine status on save', async () => {
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: mockMachines,
+      block: mockBlock,
+      totalCount: 3,
+      availableCount: 1,
+      inUseCount: 1,
+      brokenCount: 1,
+      maintenanceCount: 0,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const updateSpy = jest
+      .spyOn(caretakerService, 'updateMachineStatus')
+      .mockResolvedValue({ success: true });
+
+    const { getByTestId } = await renderScreen();
+
+    // Open sheet for Machine 01
+    await act(async () => {
+      fireEvent.press(getByTestId('caretaker-machine-row-01'));
+    });
+
+    // Select Maintenance
+    await act(async () => {
+      fireEvent.press(getByTestId('status-option-maintenance'));
+    });
+
+    // Type a note
+    await act(async () => {
+      fireEvent.changeText(getByTestId('caretaker-note-input'), 'Routine maintenance');
+    });
+
+    // Save
+    await act(async () => {
+      fireEvent.press(getByTestId('save-verification-button'));
+    });
+
+    expect(updateSpy).toHaveBeenCalledWith({
+      machineId: 'm1',
+      status: 'maintenance',
+      note: 'Routine maintenance',
+    });
+  });
+
+  it('shows force-clear option for stuck in-use machine and executes force-clear', async () => {
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: mockMachines,
+      block: mockBlock,
+      totalCount: 3,
+      availableCount: 1,
+      inUseCount: 1,
+      brokenCount: 1,
+      maintenanceCount: 0,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const forceClearSpy = jest
+      .spyOn(caretakerService, 'forceClearMachine')
+      .mockResolvedValue({ success: true });
+
+    const { getByTestId } = await renderScreen();
+
+    // Open sheet for Machine 02 (which is in_use)
+    await act(async () => {
+      fireEvent.press(getByTestId('caretaker-machine-row-02'));
+    });
+
+    expect(getByTestId('force-clear-card')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(getByTestId('force-clear-button'));
+    });
+
+    expect(forceClearSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        machineId: 'm2',
+      })
+    );
+  });
+
+  it('switches to issue reports tab and displays open issues', async () => {
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: mockMachines,
+      block: mockBlock,
+      totalCount: 3,
+      availableCount: 1,
+      inUseCount: 1,
+      brokenCount: 1,
+      maintenanceCount: 0,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { getByTestId, getByText } = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(getByTestId('tab-issues'));
+    });
+
+    await waitFor(() => {
+      expect(getByTestId('issue-card-issue-1')).toBeTruthy();
+    });
+
+    expect(getByText('Drum not spinning during cycle')).toBeTruthy();
+  });
+});

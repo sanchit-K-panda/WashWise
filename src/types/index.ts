@@ -1,4 +1,4 @@
-import { Tables, WashSessionStatus } from './database';
+import { Tables, WashSessionStatus, MachineStatus } from './database';
 
 export * from './database';
 
@@ -11,6 +11,23 @@ export type SpinAdjustment = Tables<'spin_adjustments'>;
 export type WashSession = Tables<'wash_sessions'>;
 export type IssueReport = Tables<'issue_reports'>;
 export type StatusLog = Tables<'status_log'>;
+
+export interface StatusLogEntry extends StatusLog {
+  profiles?: {
+    name: string | null;
+  } | null;
+}
+
+export interface VerifyMachineParams {
+  machineId: string;
+  status: MachineStatus;
+  note?: string | null;
+}
+
+export interface ForceClearMachineParams {
+  machineId: string;
+  reason?: string;
+}
 
 export interface ActiveWashSession {
   id: string;
