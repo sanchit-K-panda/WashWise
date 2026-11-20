@@ -2,7 +2,10 @@ import { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { Profile, UserRole } from '@/types';
 
-export const ALLOWED_EMAIL_DOMAIN = process.env.EXPO_PUBLIC_ALLOWED_EMAIL_DOMAIN || 'college.edu';
+export const ALLOWED_EMAIL_DOMAIN =
+  process.env.EXPO_PUBLIC_COLLEGE_EMAIL_DOMAIN ||
+  process.env.EXPO_PUBLIC_ALLOWED_EMAIL_DOMAIN ||
+  'college.edu';
 
 /**
  * Validates that an email is well-formed and belongs to the authorized college domain.

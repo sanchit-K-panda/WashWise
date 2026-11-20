@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { Database } from '@/types/database';
 
 /**
@@ -49,8 +50,14 @@ export const ExpoSecureStoreAdapter = {
   },
 };
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+const supabaseUrl =
+  process.env.EXPO_PUBLIC_SUPABASE_URL ||
+  (Constants.expoConfig?.extra?.supabaseUrl as string) ||
+  'https://placeholder.supabase.co';
+const supabaseAnonKey =
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  (Constants.expoConfig?.extra?.supabaseAnonKey as string) ||
+  'placeholder-anon-key';
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
