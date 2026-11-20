@@ -1,79 +1,16 @@
-export type MachineStatus = 'available' | 'in_use' | 'broken' | 'maintenance';
-export type UserRole = 'student' | 'caretaker';
-export type WashSessionStatus = 'running' | 'done' | 'collected' | 'cancelled';
+import { Tables } from './database';
 
-export interface Profile {
-  id: string;
-  name: string;
-  role: UserRole;
-  hostel_block_id: string | null;
-}
+export * from './database';
 
-export interface HostelBlock {
-  id: string;
-  name: string;
-}
-
-export interface Machine {
-  id: string;
-  block_id: string;
-  label: string;
-  capacity_kg: number;
-  status: MachineStatus;
-  status_updated_by: string | null;
-  status_updated_at: string;
-  note: string | null;
-}
-
-export interface WashProgram {
-  id: string;
-  name: string;
-  base_minutes: number;
-  per_kg_minutes: number;
-  active: boolean;
-}
-
-export interface TempAdjustment {
-  temp: string;
-  minutes: number;
-}
-
-export interface SpinAdjustment {
-  spin: string;
-  minutes: number;
-}
-
-export interface WashSession {
-  id: string;
-  machine_id: string;
-  user_id: string;
-  program_id: string;
-  temp: string;
-  spin: string;
-  weight_kg: number;
-  started_at: string;
-  ends_at: string;
-  collected_at: string | null;
-  status: WashSessionStatus;
-}
-
-export interface IssueReport {
-  id: string;
-  machine_id: string;
-  reported_by: string;
-  description: string;
-  resolved_at: string | null;
-  resolved_by: string | null;
-}
-
-export interface StatusLog {
-  id: string;
-  machine_id: string;
-  old_status: MachineStatus;
-  new_status: MachineStatus;
-  changed_by: string;
-  changed_at: string;
-}
+export type Profile = Tables<'profiles'>;
+export type HostelBlock = Tables<'hostel_blocks'>;
+export type Machine = Tables<'machines'>;
+export type WashProgram = Tables<'wash_programs'>;
+export type TempAdjustment = Tables<'temp_adjustments'>;
+export type SpinAdjustment = Tables<'spin_adjustments'>;
+export type WashSession = Tables<'wash_sessions'>;
+export type IssueReport = Tables<'issue_reports'>;
+export type StatusLog = Tables<'status_log'>;
 
 export interface TimerCalculationParams {
   baseMinutes: number;

@@ -17,6 +17,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
     status_updated_at: '',
     note: null,
     verifiedAt: '21:30',
+    created_at: '',
   },
   {
     id: '2',
@@ -28,6 +29,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
     status_updated_at: '',
     note: null,
     verifiedAt: '21:30',
+    created_at: '',
   },
   {
     id: '3',
@@ -39,6 +41,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
     status_updated_at: '',
     note: null,
     verifiedAt: '21:15',
+    created_at: '',
   },
   {
     id: '4',
@@ -50,6 +53,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
     status_updated_at: '',
     note: null,
     verifiedAt: '21:15',
+    created_at: '',
   },
   {
     id: '5',
@@ -61,6 +65,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
     status_updated_at: '',
     note: null,
     verifiedAt: '20:45',
+    created_at: '',
   },
   {
     id: '6',
@@ -72,6 +77,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
     status_updated_at: '',
     note: 'Filter cleaning in progress',
     verifiedAt: '19:00',
+    created_at: '',
   },
   {
     id: '7',
@@ -83,6 +89,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
     status_updated_at: '',
     note: 'Door latch fault',
     verifiedAt: '18:20',
+    created_at: '',
   },
   {
     id: '8',
@@ -94,6 +101,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
     status_updated_at: '',
     note: null,
     verifiedAt: '21:30',
+    created_at: '',
   },
 ];
 
