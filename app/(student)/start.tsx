@@ -8,6 +8,7 @@ import { calculateWashDuration, formatEndTime } from '@/lib/timer';
 import { Screen, Text, Button, Chip } from '@/components/ui';
 import { useWashConfig } from '@/hooks/useWashConfig';
 import { startWash } from '@/services/wash';
+import { scheduleWashNotifications } from '@/services/notifications';
 
 export default function StartWashScreen() {
   const router = useRouter();
@@ -115,7 +116,15 @@ export default function StartWashScreen() {
       return;
     }
 
+    // Schedule local notifications for 5m before and at completion
+    scheduleWashNotifications(
+      result.session.session_id,
+      result.session.machine_label,
+      new Date(result.session.ends_at)
+    ).catch(() => {});
+
     queryClient.invalidateQueries({ queryKey: ['machines'] });
+    queryClient.invalidateQueries({ queryKey: ['active_session'] });
     router.replace(`/(student)/timer/${result.session.session_id}`);
   };
 

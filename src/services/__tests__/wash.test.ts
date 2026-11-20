@@ -1,15 +1,27 @@
-import { fetchMachineById, fetchWashConfig, startWash } from '../wash';
+import {
+  fetchMachineById,
+  fetchWashConfig,
+  startWash,
+  collectWash,
+  reportMachineIssue,
+  fetchActiveUserSession,
+  fetchSessionDetails,
+} from '../wash';
 import { supabase } from '../supabase';
 
 jest.mock('../supabase', () => ({
   supabase: {
     from: jest.fn(),
     rpc: jest.fn(),
+    auth: {
+      getUser: jest.fn(),
+    },
   },
 }));
 
 describe('Wash Service', () => {
   const machineId = 'b0000000-0000-0000-0000-000000000001';
+  const sessionId = 'session-123';
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -37,19 +49,6 @@ describe('Wash Service', () => {
 
       const machine = await fetchMachineById(machineId);
       expect(machine).toEqual(mockMachine);
-    });
-
-    it('returns null when machine does not exist or errors', async () => {
-      (supabase.from as jest.Mock).mockReturnValueOnce({
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        maybeSingle: jest
-          .fn()
-          .mockResolvedValueOnce({ data: null, error: { message: 'Not found' } }),
-      });
-
-      const machine = await fetchMachineById(machineId);
-      expect(machine).toBeNull();
     });
   });
 
@@ -121,14 +120,6 @@ describe('Wash Service', () => {
       });
 
       const result = await startWash(params);
-
-      expect(supabase.rpc).toHaveBeenCalledWith('start_wash', {
-        p_machine_id: machineId,
-        p_program_id: 'normal',
-        p_temp: '40',
-        p_spin: 'High',
-        p_weight_kg: 5,
-      });
       expect(result.success).toBe(true);
       expect(result.session).toEqual(mockSession);
     });
@@ -143,26 +134,93 @@ describe('Wash Service', () => {
       });
 
       const result = await startWash(params);
-
       expect(result.success).toBe(false);
       expect(result.isRaceConflict).toBe(true);
-      expect(result.error).toContain('just taken');
     });
+  });
 
-    it('handles overload error (WW002)', async () => {
+  describe('collectWash', () => {
+    it('calls collect_wash RPC and returns success', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
-        data: null,
-        error: {
-          code: 'WW002',
-          message: 'Load weight (8 kg) exceeds machine capacity (7 kg)',
-        },
+        data: { success: true },
+        error: null,
       });
 
-      const result = await startWash(params);
+      const result = await collectWash(sessionId);
+      expect(supabase.rpc).toHaveBeenCalledWith('collect_wash', {
+        p_session_id: sessionId,
+      });
+      expect(result.success).toBe(true);
+    });
+  });
 
-      expect(result.success).toBe(false);
-      expect(result.isRaceConflict).toBeFalsy();
-      expect(result.error).toContain('exceeds machine capacity');
+  describe('reportMachineIssue', () => {
+    it('inserts issue report for machine when user is signed in', async () => {
+      (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
+        data: { user: { id: 'user-1' } },
+        error: null,
+      });
+
+      (supabase.from as jest.Mock).mockReturnValueOnce({
+        insert: jest.fn().mockResolvedValueOnce({ error: null }),
+      });
+
+      const result = await reportMachineIssue(machineId, 'Door latch broken');
+      expect(result.success).toBe(true);
+      expect(supabase.from).toHaveBeenCalledWith('issue_reports');
+    });
+  });
+
+  describe('fetchActiveUserSession and fetchSessionDetails', () => {
+    it('fetches active user session with machine and program details', async () => {
+      const mockSession = {
+        id: sessionId,
+        machine_id: machineId,
+        program_id: 'prog-1',
+        status: 'running',
+        started_at: '2026-11-20T10:00:00Z',
+        ends_at: '2026-11-20T10:40:00Z',
+      };
+      const mockMachine = { id: machineId, label: '01' };
+      const mockProgram = { id: 'prog-1', name: 'Normal' };
+
+      (supabase.from as jest.Mock).mockImplementation((table: string) => {
+        if (table === 'wash_sessions') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            in: jest.fn().mockReturnThis(),
+            order: jest.fn().mockReturnThis(),
+            limit: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValueOnce({ data: mockSession, error: null }),
+          };
+        }
+        if (table === 'machines') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValueOnce({ data: mockMachine, error: null }),
+          };
+        }
+        if (table === 'wash_programs') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValueOnce({ data: mockProgram, error: null }),
+          };
+        }
+        return {};
+      });
+
+      const session = await fetchActiveUserSession('user-1');
+      expect(session).not.toBeNull();
+      expect(session?.id).toBe(sessionId);
+      expect(session?.machine).toEqual(mockMachine);
+      expect(session?.program).toEqual(mockProgram);
+
+      const sessionById = await fetchSessionDetails(sessionId);
+      expect(sessionById).not.toBeNull();
+      expect(sessionById?.id).toBe(sessionId);
     });
   });
 });

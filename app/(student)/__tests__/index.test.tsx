@@ -3,6 +3,7 @@ import { render, fireEvent, act } from '@testing-library/react-native';
 import StudentHomeScreen from '../index';
 import * as useAuthModule from '@/hooks/useAuth';
 import * as useMachinesModule from '@/hooks/useMachines';
+import * as useActiveSessionModule from '@/hooks/useActiveSession';
 import { MachineWithSession, HostelBlock } from '@/types';
 
 const mockPush = jest.fn();
@@ -11,6 +12,10 @@ jest.mock('expo-router', () => ({
     push: mockPush,
     replace: jest.fn(),
   }),
+}));
+
+jest.mock('@/hooks/useActiveSession', () => ({
+  useActiveSession: jest.fn(),
 }));
 
 const mockSignOut = jest.fn();
@@ -73,6 +78,12 @@ const mockMachines: MachineWithSession[] = [
 describe('StudentHomeScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+
+    (useActiveSessionModule.useActiveSession as jest.Mock).mockReturnValue({
+      activeSession: null,
+      isLoading: false,
+      refetch: jest.fn(),
+    });
 
     jest.spyOn(useAuthModule, 'useAuth').mockReturnValue({
       user: { id: 'u1', email: 'student@college.edu' } as never,
@@ -261,5 +272,53 @@ describe('StudentHomeScreen', () => {
     });
 
     expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  it('renders active wash session banner and navigates to timer on press', async () => {
+    (useActiveSessionModule.useActiveSession as jest.Mock).mockReturnValue({
+      activeSession: {
+        id: 'session-active-1',
+        machine_id: 'm1',
+        user_id: 'u1',
+        program_id: 'prog-1',
+        temp: '40',
+        spin: 'High',
+        weight_kg: 5,
+        started_at: '2026-11-20T10:00:00Z',
+        ends_at: '2026-11-20T10:45:00Z',
+        collected_at: null,
+        status: 'running',
+        machine: { id: 'm1', label: '01' },
+      },
+      isLoading: false,
+      refetch: jest.fn(),
+    });
+
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: mockMachines,
+      block: mockBlock,
+      totalCount: 4,
+      availableCount: 1,
+      inUseCount: 1,
+      brokenCount: 1,
+      maintenanceCount: 1,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { getByTestId, getByText } = await render(<StudentHomeScreen />);
+    expect(getByTestId('active-session-banner')).toBeTruthy();
+    expect(getByText(/Machine 01/)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(getByTestId('active-session-banner'));
+    });
+
+    expect(mockPush).toHaveBeenCalledWith('/(student)/timer/session-active-1');
   });
 });

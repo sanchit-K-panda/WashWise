@@ -330,6 +330,17 @@ export interface Database {
         Args: Record<PropertyKey, never>;
         Returns: number;
       };
+      collect_wash: {
+        Args: {
+          p_session_id: string;
+        };
+        Returns: {
+          success: boolean;
+          session_id: string;
+          machine_id: string;
+          collected_at: string;
+        };
+      };
     };
     Enums: {
       machine_status: MachineStatus;

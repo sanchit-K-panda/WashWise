@@ -6,6 +6,7 @@ import { colors } from '@/theme/tokens';
 import { Screen, Text, Chip, Button, Skeleton } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { useMachines } from '@/hooks/useMachines';
+import { useActiveSession } from '@/hooks/useActiveSession';
 import { MachineWithSession } from '@/types';
 
 function formatSyncTime(date: Date | null): string {
@@ -16,6 +17,7 @@ function formatSyncTime(date: Date | null): string {
 export default function StudentHomeScreen() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
+  const { activeSession } = useActiveSession();
   const {
     machines,
     block,
@@ -74,6 +76,35 @@ export default function StudentHomeScreen() {
         ),
       }}
     >
+      {/* Active wash session restore card */}
+      {activeSession && (
+        <Pressable
+          testID="active-session-banner"
+          accessibilityRole="button"
+          accessibilityLabel={`Active wash on Machine ${activeSession.machine?.label || ''}. Tap to view timer.`}
+          onPress={() => router.push(`/(student)/timer/${activeSession.id}`)}
+          className="p-4 mb-4 rounded-md border border-sky-200 bg-sky-50 flex-row items-center justify-between"
+        >
+          <View className="flex-1 mr-2">
+            <Text variant="caption" color="accent" style={{ fontWeight: '600' }}>
+              Active wash cycle
+            </Text>
+            <Text variant="body" color="ink" style={{ marginTop: 2 }}>
+              Machine {activeSession.machine?.label || '01'} ·{' '}
+              {activeSession.status === 'done' ? 'Done (Pending collection)' : 'Running'}
+            </Text>
+          </View>
+          <Button
+            size="sm"
+            variant="primary"
+            fullWidth={false}
+            onPress={() => router.push(`/(student)/timer/${activeSession.id}`)}
+          >
+            View timer
+          </Button>
+        </Pressable>
+      )}
+
       {/* Loading Skeleton state */}
       {isLoading && machines.length === 0 && (
         <View testID="loading-skeletons" className="flex-row flex-wrap justify-between gap-y-3">

@@ -25,6 +25,11 @@ jest.mock('@/hooks/useWashConfig', () => ({
   useWashConfig: jest.fn(),
 }));
 
+jest.mock('@/services/notifications', () => ({
+  scheduleWashNotifications: jest.fn().mockResolvedValue({}),
+  cancelSessionNotifications: jest.fn().mockResolvedValue(undefined),
+}));
+
 const mockMachine: Machine = {
   id: 'm1',
   block_id: 'block-a',

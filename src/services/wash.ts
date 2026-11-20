@@ -31,6 +31,22 @@ export const FALLBACK_SPINS: SpinAdjustment[] = [
   { spin: 'High', minutes: 4 },
 ];
 
+export interface WashSessionDetails {
+  id: string;
+  machine_id: string;
+  user_id: string;
+  program_id: string;
+  temp: string;
+  spin: string;
+  weight_kg: number;
+  started_at: string;
+  ends_at: string;
+  collected_at: string | null;
+  status: 'running' | 'done' | 'collected' | 'cancelled';
+  machine?: Machine | null;
+  program?: WashProgram | null;
+}
+
 /**
  * Fetches machine by ID.
  */
@@ -99,7 +115,6 @@ export async function startWash(params: StartWashParams): Promise<StartWashRespo
       const msg = error.message || '';
       const code = (error as { code?: string }).code || '';
 
-      // Check if machine is no longer available (race condition / concurrency)
       const isRaceConflict =
         code === 'WW001' ||
         msg.toLowerCase().includes('not available') ||
@@ -113,7 +128,6 @@ export async function startWash(params: StartWashParams): Promise<StartWashRespo
         };
       }
 
-      // Check if overloaded
       const isOverload = code === 'WW002' || msg.toLowerCase().includes('exceeds machine capacity');
       if (isOverload) {
         return {
@@ -138,5 +152,141 @@ export async function startWash(params: StartWashParams): Promise<StartWashRespo
       success: false,
       error: msg,
     };
+  }
+}
+
+/**
+ * Marks a wash session as collected and frees the machine via RPC collect_wash.
+ */
+export async function collectWash(
+  sessionId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase.rpc('collect_wash', {
+      p_session_id: sessionId,
+    });
+
+    if (error) {
+      // Fallback: direct update in case RPC is not yet created in local test env
+      const { error: sessionError } = await supabase
+        .from('wash_sessions')
+        .update({ status: 'collected', collected_at: new Date().toISOString() })
+        .eq('id', sessionId);
+
+      if (sessionError) {
+        return { success: false, error: sessionError.message };
+      }
+    }
+
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to collect wash';
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Submits an issue report for a machine.
+ */
+export async function reportMachineIssue(
+  machineId: string,
+  description: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return { success: false, error: 'User must be signed in to report an issue' };
+    }
+
+    const { error } = await supabase.from('issue_reports').insert({
+      machine_id: machineId,
+      reported_by: userData.user.id,
+      description: description.trim(),
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to report issue';
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Fetches the active running or done wash session for a user to restore on app restart.
+ */
+export async function fetchActiveUserSession(userId: string): Promise<WashSessionDetails | null> {
+  try {
+    const { data: session, error } = await supabase
+      .from('wash_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .in('status', ['running', 'done'])
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !session) return null;
+
+    const [machineRes, progRes] = await Promise.all([
+      supabase.from('machines').select('*').eq('id', session.machine_id).maybeSingle(),
+      supabase.from('wash_programs').select('*').eq('id', session.program_id).maybeSingle(),
+    ]);
+
+    return {
+      ...session,
+      machine: machineRes.data as Machine | null,
+      program: progRes.data as WashProgram | null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetches full details for a session by session ID (or machine ID fallback).
+ */
+export async function fetchSessionDetails(
+  sessionIdOrMachineId: string
+): Promise<WashSessionDetails | null> {
+  try {
+    // 1. Try by session ID
+    let { data: session } = await supabase
+      .from('wash_sessions')
+      .select('*')
+      .eq('id', sessionIdOrMachineId)
+      .maybeSingle();
+
+    // 2. If not found by session ID, try by machine ID for latest active session
+    if (!session) {
+      const res = await supabase
+        .from('wash_sessions')
+        .select('*')
+        .eq('machine_id', sessionIdOrMachineId)
+        .in('status', ['running', 'done'])
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      session = res.data;
+    }
+
+    if (!session) return null;
+
+    const [machineRes, progRes] = await Promise.all([
+      supabase.from('machines').select('*').eq('id', session.machine_id).maybeSingle(),
+      supabase.from('wash_programs').select('*').eq('id', session.program_id).maybeSingle(),
+    ]);
+
+    return {
+      ...session,
+      machine: machineRes.data as Machine | null,
+      program: progRes.data as WashProgram | null,
+    };
+  } catch {
+    return null;
   }
 }
