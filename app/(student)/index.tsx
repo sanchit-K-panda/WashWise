@@ -1,6 +1,9 @@
 import { View, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LogOut } from 'lucide-react-native';
+import { colors } from '@/theme/tokens';
 import { Screen, Text, Chip } from '@/components/ui';
+import { useAuth } from '@/hooks/useAuth';
 import { Machine } from '@/types';
 
 const INITIAL_MACHINES: (Machine & { timeLeftMinutes?: number })[] = [
@@ -99,6 +102,7 @@ const INITIAL_MACHINES: (Machine & { timeLeftMinutes?: number })[] = [
 
 export default function StudentHomeScreen() {
   const router = useRouter();
+  const { profile, signOut } = useAuth();
   const availableCount = INITIAL_MACHINES.filter((m) => m.status === 'available').length;
   const totalCount = INITIAL_MACHINES.length;
 
@@ -107,8 +111,17 @@ export default function StudentHomeScreen() {
       scrollable
       header={{
         title: `${availableCount} of ${totalCount} free`,
-        subtitle: 'Block A Laundry Room',
-        onBack: () => router.back(),
+        subtitle: profile?.name ? `${profile.name} · Block A` : 'Block A Laundry Room',
+        rightAction: (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            onPress={signOut}
+            className="w-10 h-10 items-center justify-center -mr-2 rounded-full active:bg-sky-50"
+          >
+            <LogOut size={18} strokeWidth={1.75} color={colors.ink.muted} />
+          </Pressable>
+        ),
       }}
     >
       <View className="flex-row flex-wrap justify-between gap-y-3">

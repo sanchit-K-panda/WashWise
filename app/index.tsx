@@ -1,11 +1,39 @@
+import { useEffect } from 'react';
 import { View, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { WashingMachine, User, ShieldCheck } from 'lucide-react-native';
 import { colors } from '@/theme/tokens';
-import { Screen, Text } from '@/components/ui';
+import { Screen, Text, Skeleton } from '@/components/ui';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function IndexScreen() {
   const router = useRouter();
+  const { user, profile, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (!user || !profile) {
+        router.replace('/(auth)/login');
+      } else if (profile.role === 'student') {
+        router.replace('/(student)');
+      } else if (profile.role === 'caretaker') {
+        router.replace('/(caretaker)');
+      }
+    }
+  }, [user, profile, isLoading, router]);
+
+  if (isLoading) {
+    return (
+      <Screen>
+        <View className="space-y-4 gap-4 pt-8">
+          <Skeleton.Line width="60%" />
+          <Skeleton.Line width="40%" />
+          <Skeleton.Card />
+          <Skeleton.Card />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen header={{ title: 'WashWise', subtitle: 'Hostel laundry status and timers' }}>

@@ -17,6 +17,7 @@ import {
   JetBrainsMono_700Bold,
 } from '@expo-google-fonts/jetbrains-mono';
 import { colors } from '@/theme/tokens';
+import { AuthProvider } from '@/hooks/useAuth';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -54,7 +55,7 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <AuthProvider>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -63,6 +64,6 @@ export default function RootLayout() {
           animation: 'fade',
         }}
       />
-    </>
+    </AuthProvider>
   );
 }

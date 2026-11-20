@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { View, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, LogOut } from 'lucide-react-native';
 import { colors } from '@/theme/tokens';
 import { Screen, Text, Chip, Button } from '@/components/ui';
+import { useAuth } from '@/hooks/useAuth';
 import { Machine } from '@/types';
 
 const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
@@ -107,6 +108,7 @@ const INITIAL_MACHINES: (Machine & { verifiedAt: string })[] = [
 
 export default function CaretakerHomeScreen() {
   const router = useRouter();
+  const { profile, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<'machines' | 'issues'>('machines');
 
   return (
@@ -114,8 +116,17 @@ export default function CaretakerHomeScreen() {
       scrollable
       header={{
         title: 'Machine verification',
-        subtitle: 'Block A Caretaker',
-        onBack: () => router.back(),
+        subtitle: profile?.name ? `${profile.name} · Block A` : 'Block A Caretaker',
+        rightAction: (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            onPress={signOut}
+            className="w-10 h-10 items-center justify-center -mr-2 rounded-full active:bg-sky-50"
+          >
+            <LogOut size={18} strokeWidth={1.75} color={colors.ink.muted} />
+          </Pressable>
+        ),
       }}
     >
       {/* Tab switcher */}
