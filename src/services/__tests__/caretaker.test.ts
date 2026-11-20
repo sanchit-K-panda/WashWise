@@ -130,8 +130,10 @@ describe('Caretaker Service', () => {
 
       (supabase.from as jest.Mock).mockReturnValueOnce({
         select: jest.fn().mockReturnValue({
-          is: jest.fn().mockReturnValue({
-            order: jest.fn().mockResolvedValueOnce({ data: mockIssues, error: null }),
+          eq: jest.fn().mockReturnValue({
+            is: jest.fn().mockReturnValue({
+              order: jest.fn().mockResolvedValueOnce({ data: mockIssues, error: null }),
+            }),
           }),
         }),
       });
@@ -141,14 +143,18 @@ describe('Caretaker Service', () => {
     });
 
     it('resolves issue report', async () => {
-      (supabase.from as jest.Mock).mockReturnValueOnce({
-        update: jest.fn().mockReturnValue({
-          eq: jest.fn().mockResolvedValueOnce({ error: null }),
-        }),
+      (supabase.rpc as jest.Mock).mockResolvedValueOnce({
+        data: { success: true },
+        error: null,
       });
 
       const result = await resolveIssue('issue-1');
       expect(result.success).toBe(true);
+      expect(supabase.rpc).toHaveBeenCalledWith('resolve_issue_report', {
+        p_issue_id: 'issue-1',
+        p_machine_status: null,
+        p_status_note: null,
+      });
     });
   });
 });

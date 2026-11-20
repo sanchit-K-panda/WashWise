@@ -29,6 +29,21 @@ export interface ForceClearMachineParams {
   reason?: string;
 }
 
+export interface ResolveIssueParams {
+  issueId: string;
+  resultingMachineStatus?: MachineStatus | null;
+  resolutionNote?: string | null;
+}
+
+export interface IssueReportWithMachine extends IssueReport {
+  machines?: {
+    id: string;
+    label: string;
+    block_id: string;
+    status: MachineStatus;
+  } | null;
+}
+
 export interface ActiveWashSession {
   id: string;
   machine_id: string;

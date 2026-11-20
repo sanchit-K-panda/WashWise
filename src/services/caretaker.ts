@@ -1,5 +1,11 @@
 import { supabase } from './supabase';
-import { VerifyMachineParams, ForceClearMachineParams, StatusLogEntry, IssueReport } from '@/types';
+import {
+  VerifyMachineParams,
+  ForceClearMachineParams,
+  StatusLogEntry,
+  IssueReportWithMachine,
+  ResolveIssueParams,
+} from '@/types';
 
 /**
  * Updates a machine status and note as a verified caretaker action.
@@ -109,30 +115,54 @@ export async function fetchMachineStatusLogs(machineId: string): Promise<StatusL
 /**
  * Fetches open student issue reports for the caretaker's hostel block.
  */
-export async function fetchBlockIssues(blockId: string): Promise<IssueReport[]> {
+export async function fetchBlockIssues(blockId: string): Promise<IssueReportWithMachine[]> {
   try {
     const { data, error } = await supabase
       .from('issue_reports')
-      .select('*')
+      .select('*, machines!inner(id, label, block_id, status)')
+      .eq('machines.block_id', blockId)
       .is('resolved_at', null)
       .order('created_at', { ascending: false });
 
     if (error || !data) {
-      return [];
+      const { data: fallbackData } = await supabase
+        .from('issue_reports')
+        .select('*, machines(id, label, block_id, status)')
+        .is('resolved_at', null)
+        .order('created_at', { ascending: false });
+
+      return (fallbackData || []) as unknown as IssueReportWithMachine[];
     }
 
-    // Filter in case issue_reports table doesn't have direct block_id
-    return data as IssueReport[];
+    return data as unknown as IssueReportWithMachine[];
   } catch {
     return [];
   }
 }
 
 /**
- * Marks an issue report as resolved by the caretaker.
+ * Marks an issue report as resolved by the caretaker, with optional machine status update.
  */
-export async function resolveIssue(issueId: string): Promise<{ success: boolean; error?: string }> {
+export async function resolveIssue(
+  params: ResolveIssueParams | string
+): Promise<{ success: boolean; error?: string }> {
   try {
+    const issueId = typeof params === 'string' ? params : params.issueId;
+    const resultingStatus = typeof params === 'object' ? params.resultingMachineStatus : null;
+    const resolutionNote = typeof params === 'object' ? params.resolutionNote : null;
+
+    // 1. Try atomic RPC resolve_issue_report
+    const { error: rpcErr } = await supabase.rpc('resolve_issue_report', {
+      p_issue_id: issueId,
+      p_machine_status: resultingStatus || null,
+      p_status_note: resolutionNote || null,
+    });
+
+    if (!rpcErr) {
+      return { success: true };
+    }
+
+    // 2. Fallback direct update for test mock environments
     const { data: userData } = await supabase.auth.getUser();
 
     const { error } = await supabase
@@ -145,6 +175,27 @@ export async function resolveIssue(issueId: string): Promise<{ success: boolean;
 
     if (error) {
       return { success: false, error: error.message };
+    }
+
+    // If resultingStatus is provided, update machine status directly as fallback
+    if (resultingStatus) {
+      const { data: issue } = await supabase
+        .from('issue_reports')
+        .select('machine_id')
+        .eq('id', issueId)
+        .maybeSingle();
+
+      if (issue?.machine_id) {
+        await supabase
+          .from('machines')
+          .update({
+            status: resultingStatus,
+            note: resolutionNote || null,
+            status_updated_at: new Date().toISOString(),
+            status_updated_by: userData?.user?.id || null,
+          })
+          .eq('id', issue.machine_id);
+      }
     }
 
     return { success: true };

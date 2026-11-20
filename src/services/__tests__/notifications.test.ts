@@ -4,6 +4,7 @@ import {
   requestNotificationPermissions,
   scheduleWashNotifications,
   cancelSessionNotifications,
+  sendCaretakerIssueAlert,
 } from '../notifications';
 
 jest.mock('expo-notifications', () => ({
@@ -80,6 +81,29 @@ describe('Notifications Service', () => {
       expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('notif-5m-id');
       expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('notif-end-id');
       expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith('wash_notifs_session-1');
+    });
+  });
+
+  describe('sendCaretakerIssueAlert', () => {
+    it('schedules an immediate alert for caretakers on new issue report', async () => {
+      (Notifications.getPermissionsAsync as jest.Mock).mockResolvedValueOnce({ status: 'granted' });
+      (Notifications.scheduleNotificationAsync as jest.Mock).mockResolvedValueOnce('alert-id-1');
+
+      const result = await sendCaretakerIssueAlert('03', 'Door latch stuck', 'block-a');
+      expect(result).toBe('alert-id-1');
+      expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith({
+        content: {
+          title: 'New Issue: Machine 03',
+          body: 'Door latch stuck',
+          sound: true,
+          data: {
+            type: 'issue_report',
+            machineLabel: '03',
+            blockId: 'block-a',
+          },
+        },
+        trigger: null,
+      });
     });
   });
 });

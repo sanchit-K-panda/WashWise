@@ -367,6 +367,20 @@ export interface Database {
           cleared_at: string;
         };
       };
+      resolve_issue_report: {
+        Args: {
+          p_issue_id: string;
+          p_machine_status?: MachineStatus | null;
+          p_status_note?: string | null;
+        };
+        Returns: {
+          success: boolean;
+          issue_id: string;
+          resolved_at: string;
+          machine_id: string;
+          machine_status?: MachineStatus | null;
+        };
+      };
     };
     Enums: {
       machine_status: MachineStatus;

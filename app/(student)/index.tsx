@@ -1,12 +1,13 @@
-import React, { useMemo } from 'react';
-import { View, Pressable, RefreshControl } from 'react-native';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
+import { View, Pressable, RefreshControl, Modal, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
-import { LogOut, Ban, AlertCircle } from 'lucide-react-native';
+import { LogOut, Ban, AlertCircle, AlertTriangle, Check, X } from 'lucide-react-native';
 import { colors } from '@/theme/tokens';
 import { Screen, Text, Chip, Button, Skeleton } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { useMachines } from '@/hooks/useMachines';
 import { useActiveSession } from '@/hooks/useActiveSession';
+import { reportMachineIssue } from '@/services/wash';
 import { MachineWithSession } from '@/types';
 
 function formatSyncTime(date: Date | null): string {
@@ -18,6 +19,53 @@ export default function StudentHomeScreen() {
   const router = useRouter();
   const { profile, signOut } = useAuth();
   const { activeSession } = useActiveSession();
+  const [selectedReportMachine, setSelectedReportMachine] = useState<MachineWithSession | null>(
+    null
+  );
+  const [reportDescription, setReportDescription] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportSuccess, setReportSuccess] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const reportSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleOpenReportModal = useCallback((machine: MachineWithSession) => {
+    setSelectedReportMachine(machine);
+    setReportDescription('');
+    setReportSuccess(false);
+    setReportError(null);
+  }, []);
+
+  const handleCloseReportModal = useCallback(() => {
+    setSelectedReportMachine(null);
+    if (reportSuccessTimeoutRef.current) {
+      clearTimeout(reportSuccessTimeoutRef.current);
+    }
+  }, []);
+
+  const handleSubmitReport = useCallback(async () => {
+    if (!selectedReportMachine || !reportDescription.trim() || isSubmittingReport) return;
+
+    setIsSubmittingReport(true);
+    setReportError(null);
+
+    const result = await reportMachineIssue(
+      selectedReportMachine.id,
+      reportDescription.trim(),
+      selectedReportMachine.label
+    );
+
+    setIsSubmittingReport(false);
+
+    if (result.success) {
+      setReportSuccess(true);
+      reportSuccessTimeoutRef.current = setTimeout(() => {
+        handleCloseReportModal();
+      }, 1500);
+    } else {
+      setReportError(result.error || 'Failed to submit issue report.');
+    }
+  }, [selectedReportMachine, reportDescription, isSubmittingReport, handleCloseReportModal]);
+
   const {
     machines,
     block,
@@ -193,46 +241,71 @@ export default function StudentHomeScreen() {
             return (
               <Pressable
                 key={machine.id}
-                disabled={!isAvailable}
-                accessibilityRole={isAvailable ? 'button' : 'none'}
+                testID={`machine-tile-${machine.label}`}
+                accessibilityRole="button"
                 accessibilityLabel={`Machine ${machine.label}, ${machine.capacity_kg} kilograms, ${accessibilityDescription}`}
-                accessibilityHint={isAvailable ? 'Configures and starts wash cycle' : undefined}
-                onPress={() => router.push(`/(student)/start?machineId=${machine.id}`)}
+                accessibilityHint={
+                  isAvailable ? 'Configures and starts wash cycle' : 'Opens issue report dialog'
+                }
+                onPress={() => {
+                  if (isAvailable) {
+                    router.push(`/(student)/start?machineId=${machine.id}`);
+                  } else {
+                    handleOpenReportModal(machine);
+                  }
+                }}
+                onLongPress={() => handleOpenReportModal(machine)}
                 className={`w-[48%] p-3.5 rounded-md border bg-surface min-h-[114px] justify-between ${
                   isBroken
-                    ? 'opacity-40 border-hairline'
+                    ? 'opacity-60 border-hairline active:bg-sky-50'
                     : isMaintenance
-                      ? 'opacity-70 border-hairline'
+                      ? 'opacity-80 border-hairline active:bg-sky-50'
                       : isAvailable
                         ? 'border-hairline active:border-sky-200 active:bg-sky-50'
-                        : 'border-hairline'
+                        : 'border-hairline active:bg-sky-50'
                 }`}
               >
-                {/* Top row: Machine Mono Number + Capacity/Strike Indicator */}
+                {/* Top row: Machine Mono Number + Report trigger / Capacity Indicator */}
                 <View className="flex-row items-center justify-between mb-2">
                   <Text variant="monoMachineId">{machine.label}</Text>
 
-                  {isBroken ? (
-                    <View
-                      testID={`broken-indicator-${machine.label}`}
-                      className="flex-row items-center gap-1"
+                  <View className="flex-row items-center gap-1.5">
+                    <Pressable
+                      testID={`report-issue-tile-${machine.label}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Report issue on Machine ${machine.label}`}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleOpenReportModal(machine);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      className="w-5 h-5 items-center justify-center rounded-full active:bg-sky-50"
                     >
-                      <Ban size={14} strokeWidth={2} color={colors.status.broken} />
-                      <Text
-                        variant="caption"
-                        style={{
-                          color: colors.status.broken,
-                          fontFamily: 'PlusJakartaSans_600SemiBold',
-                        }}
+                      <AlertTriangle size={13} strokeWidth={1.75} color={colors.ink.muted} />
+                    </Pressable>
+
+                    {isBroken ? (
+                      <View
+                        testID={`broken-indicator-${machine.label}`}
+                        className="flex-row items-center gap-1"
                       >
-                        Broken
+                        <Ban size={14} strokeWidth={2} color={colors.status.broken} />
+                        <Text
+                          variant="caption"
+                          style={{
+                            color: colors.status.broken,
+                            fontFamily: 'PlusJakartaSans_600SemiBold',
+                          }}
+                        >
+                          Broken
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text variant="caption" color="muted">
+                        {machine.capacity_kg}kg
                       </Text>
-                    </View>
-                  ) : (
-                    <Text variant="caption" color="muted">
-                      {machine.capacity_kg}kg
-                    </Text>
-                  )}
+                    )}
+                  </View>
                 </View>
 
                 {/* Status Chip (Color + Icon + Label) */}
@@ -259,6 +332,102 @@ export default function StudentHomeScreen() {
           })}
         </View>
       )}
+
+      {/* Report Issue Modal for Machine Tile */}
+      <Modal
+        visible={!!selectedReportMachine}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseReportModal}
+      >
+        <View
+          testID="tile-report-issue-modal"
+          className="flex-1 justify-center items-center px-5 bg-ink/40"
+        >
+          <View className="w-full max-w-sm bg-white p-5 rounded-lg border border-hairline">
+            <View className="flex-row items-center justify-between mb-4">
+              <View>
+                <Text variant="section" color="ink">
+                  Report machine issue
+                </Text>
+                <Text variant="caption" color="muted">
+                  Machine {selectedReportMachine?.label}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close report modal"
+                accessibilityRole="button"
+                onPress={handleCloseReportModal}
+                className="w-8 h-8 items-center justify-center -mr-1 rounded-full active:bg-sky-50"
+              >
+                <X size={18} strokeWidth={1.75} color={colors.ink.muted} />
+              </Pressable>
+            </View>
+
+            {reportSuccess ? (
+              <View testID="tile-issue-success" className="py-6 items-center">
+                <Check size={28} strokeWidth={2} color={colors.status.available} />
+                <Text variant="body" color="ink" style={{ marginTop: 8, fontWeight: '500' }}>
+                  Report submitted to caretaker
+                </Text>
+                <Text variant="caption" color="muted" style={{ marginTop: 4 }}>
+                  Thank you for keeping laundry running smoothly.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text variant="caption" color="muted" style={{ marginBottom: 6 }}>
+                  Describe what went wrong:
+                </Text>
+
+                <TextInput
+                  testID="tile-issue-description-input"
+                  value={reportDescription}
+                  onChangeText={setReportDescription}
+                  placeholder="e.g. Door won't lock, water leak, unusual noise…"
+                  placeholderTextColor={colors.ink.muted}
+                  multiline
+                  numberOfLines={4}
+                  style={{
+                    backgroundColor: colors.surface,
+                    borderColor: colors.hairline,
+                    borderWidth: 1,
+                    borderRadius: 8,
+                    padding: 10,
+                    fontSize: 14,
+                    color: colors.ink.DEFAULT,
+                    textAlignVertical: 'top',
+                    minHeight: 88,
+                    marginBottom: 12,
+                  }}
+                />
+
+                {reportError && (
+                  <Text variant="caption" color="broken" style={{ marginBottom: 10 }}>
+                    {reportError}
+                  </Text>
+                )}
+
+                <View className="flex-row justify-end gap-2.5">
+                  <Button variant="secondary" fullWidth={false} onPress={handleCloseReportModal}>
+                    Cancel
+                  </Button>
+                  <Button
+                    testID="submit-tile-issue-button"
+                    variant="primary"
+                    fullWidth={false}
+                    disabled={!reportDescription.trim() || isSubmittingReport}
+                    loading={isSubmittingReport}
+                    onPress={handleSubmitReport}
+                  >
+                    Submit report
+                  </Button>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }

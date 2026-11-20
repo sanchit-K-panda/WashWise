@@ -98,6 +98,36 @@ export async function scheduleWashNotifications(
 }
 
 /**
+ * Triggers an immediate notification alert to caretakers when an issue report is filed.
+ */
+export async function sendCaretakerIssueAlert(
+  machineLabel: string,
+  description: string,
+  blockId?: string
+): Promise<string | undefined> {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return undefined;
+
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `New Issue: Machine ${machineLabel}`,
+        body: description,
+        sound: true,
+        data: {
+          type: 'issue_report',
+          machineLabel,
+          blockId,
+        },
+      },
+      trigger: null, // trigger immediately
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Cancels all scheduled notifications for a given wash session.
  */
 export async function cancelSessionNotifications(sessionId: string): Promise<void> {

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { sendCaretakerIssueAlert } from './notifications';
 import {
   Machine,
   WashConfig,
@@ -186,11 +187,12 @@ export async function collectWash(
 }
 
 /**
- * Submits an issue report for a machine.
+ * Submits an issue report for a machine and notifies caretakers.
  */
 export async function reportMachineIssue(
   machineId: string,
-  description: string
+  description: string,
+  machineLabel?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const { data: userData } = await supabase.auth.getUser();
@@ -207,6 +209,10 @@ export async function reportMachineIssue(
     if (error) {
       return { success: false, error: error.message };
     }
+
+    // Trigger push notification to caretaker
+    const label = machineLabel || '01';
+    sendCaretakerIssueAlert(label, description.trim()).catch(() => {});
 
     return { success: true };
   } catch (err) {

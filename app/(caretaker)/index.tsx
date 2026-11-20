@@ -22,6 +22,8 @@ import {
   MachineStatus,
   VerifyMachineParams,
   ForceClearMachineParams,
+  IssueReportWithMachine,
+  ResolveIssueParams,
 } from '@/types';
 import {
   updateMachineStatus,
@@ -66,6 +68,14 @@ export default function CaretakerHomeScreen() {
   const [selectedStatus, setSelectedStatus] = useState<MachineStatus>('available');
   const [noteText, setNoteText] = useState('');
   const [mutationError, setMutationError] = useState<string | null>(null);
+
+  // Issue resolution dialog state
+  const [selectedResolvingIssue, setSelectedResolvingIssue] =
+    useState<IssueReportWithMachine | null>(null);
+  const [resolveResultingStatus, setResolveResultingStatus] = useState<MachineStatus | 'keep'>(
+    'available'
+  );
+  const [resolveNote, setResolveNote] = useState('');
 
   // Fetch machines for caretaker's block
   const {
@@ -186,13 +196,25 @@ export default function CaretakerHomeScreen() {
     },
   });
 
-  // Resolve issue mutation
+  // Resolve issue mutation with optional machine status update
   const resolveIssueMutation = useMutation({
-    mutationFn: (issueId: string) => resolveIssue(issueId),
+    mutationFn: (params: ResolveIssueParams) => resolveIssue(params),
     onSuccess: () => {
+      setSelectedResolvingIssue(null);
+      setResolveNote('');
       queryClient.invalidateQueries({ queryKey: ['block_issues', blockId] });
+      queryClient.invalidateQueries({ queryKey: ['machines', blockId] });
     },
   });
+
+  const handleConfirmResolveIssue = () => {
+    if (!selectedResolvingIssue) return;
+    resolveIssueMutation.mutate({
+      issueId: selectedResolvingIssue.id,
+      resultingMachineStatus: resolveResultingStatus === 'keep' ? null : resolveResultingStatus,
+      resolutionNote: resolveNote.trim() || null,
+    });
+  };
 
   const handleSaveVerification = () => {
     if (!selectedMachine) return;
@@ -407,7 +429,9 @@ export default function CaretakerHomeScreen() {
                 className="p-4 bg-surface border border-hairline rounded-md"
               >
                 <View className="flex-row items-center justify-between mb-2">
-                  <Text variant="section">Issue Report</Text>
+                  <Text variant="section">
+                    {issue.machines?.label ? `Machine ${issue.machines.label}` : 'Issue Report'}
+                  </Text>
                   <Text variant="caption" color="broken">
                     {formatReportedTime(issue.created_at)}
                   </Text>
@@ -421,10 +445,14 @@ export default function CaretakerHomeScreen() {
                   testID={`resolve-issue-${issue.id}`}
                   variant="outline"
                   size="sm"
-                  onPress={() => resolveIssueMutation.mutate(issue.id)}
+                  onPress={() => {
+                    setSelectedResolvingIssue(issue);
+                    setResolveResultingStatus('available');
+                    setResolveNote('');
+                  }}
                   accessibilityLabel="Mark issue as resolved"
                 >
-                  Mark as Resolved
+                  Resolve Issue
                 </Button>
               </View>
             ))
@@ -645,6 +673,162 @@ export default function CaretakerHomeScreen() {
                 </Button>
               </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Resolve Issue Modal (Sets Machine Status) */}
+      <Modal
+        visible={!!selectedResolvingIssue}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedResolvingIssue(null)}
+      >
+        <View
+          testID="resolve-issue-modal"
+          className="flex-1 justify-center items-center px-5 bg-ink/40"
+        >
+          <View className="w-full max-w-sm bg-white p-5 rounded-lg border border-hairline">
+            <View className="flex-row items-center justify-between mb-3">
+              <View>
+                <Text variant="section" color="ink">
+                  Resolve issue
+                </Text>
+                <Text variant="caption" color="muted">
+                  {selectedResolvingIssue?.machines?.label
+                    ? `Machine ${selectedResolvingIssue.machines.label}`
+                    : 'Reported issue'}
+                </Text>
+              </View>
+
+              <Pressable
+                accessibilityLabel="Close resolve dialog"
+                accessibilityRole="button"
+                onPress={() => setSelectedResolvingIssue(null)}
+                className="w-8 h-8 items-center justify-center -mr-1 rounded-full active:bg-sky-50"
+              >
+                <X size={18} strokeWidth={1.75} color={colors.ink.muted} />
+              </Pressable>
+            </View>
+
+            <View className="p-3 bg-surface rounded-md border border-hairline mb-4">
+              <Text variant="caption" color="muted">
+                Student report:
+              </Text>
+              <Text variant="body" color="ink" style={{ marginTop: 2 }}>
+                &ldquo;{selectedResolvingIssue?.description}&rdquo;
+              </Text>
+            </View>
+
+            <Text variant="caption" color="ink" style={{ fontWeight: '600', marginBottom: 8 }}>
+              Set machine status upon resolution:
+            </Text>
+
+            <View className="space-y-2 gap-2 mb-4">
+              {/* Option 1: Available */}
+              <Pressable
+                testID="resolve-status-available"
+                onPress={() => setResolveResultingStatus('available')}
+                className={`p-2.5 rounded-md border flex-row items-center justify-between ${
+                  resolveResultingStatus === 'available'
+                    ? 'border-status-available bg-sky-50'
+                    : 'border-hairline bg-surface'
+                }`}
+              >
+                <Text variant="body" color="ink" style={{ fontWeight: '500' }}>
+                  Free (Available)
+                </Text>
+                <Chip variant="available" label="Free" />
+              </Pressable>
+
+              {/* Option 2: Maintenance */}
+              <Pressable
+                testID="resolve-status-maintenance"
+                onPress={() => setResolveResultingStatus('maintenance')}
+                className={`p-2.5 rounded-md border flex-row items-center justify-between ${
+                  resolveResultingStatus === 'maintenance'
+                    ? 'border-status-maintenance bg-sky-50'
+                    : 'border-hairline bg-surface'
+                }`}
+              >
+                <Text variant="body" color="ink" style={{ fontWeight: '500' }}>
+                  Maintenance
+                </Text>
+                <Chip variant="maintenance" label="Servicing" />
+              </Pressable>
+
+              {/* Option 3: Broken */}
+              <Pressable
+                testID="resolve-status-broken"
+                onPress={() => setResolveResultingStatus('broken')}
+                className={`p-2.5 rounded-md border flex-row items-center justify-between ${
+                  resolveResultingStatus === 'broken'
+                    ? 'border-status-broken bg-sky-50'
+                    : 'border-hairline bg-surface'
+                }`}
+              >
+                <Text variant="body" color="ink" style={{ fontWeight: '500' }}>
+                  Broken
+                </Text>
+                <Chip variant="broken" label="Broken" />
+              </Pressable>
+
+              {/* Option 4: Keep Current */}
+              <Pressable
+                testID="resolve-status-keep"
+                onPress={() => setResolveResultingStatus('keep')}
+                className={`p-2.5 rounded-md border flex-row items-center justify-between ${
+                  resolveResultingStatus === 'keep'
+                    ? 'border-sky-500 bg-sky-50'
+                    : 'border-hairline bg-surface'
+                }`}
+              >
+                <Text variant="body" color="ink" style={{ fontWeight: '500' }}>
+                  Keep current status
+                </Text>
+              </Pressable>
+            </View>
+
+            <Text variant="caption" color="muted" style={{ marginBottom: 4 }}>
+              Resolution note (optional):
+            </Text>
+            <TextInput
+              testID="resolve-note-input"
+              value={resolveNote}
+              onChangeText={setResolveNote}
+              placeholder="e.g. Door latch adjusted, verified spin cycle…"
+              placeholderTextColor={colors.ink.muted}
+              style={{
+                backgroundColor: colors.surface,
+                borderColor: colors.hairline,
+                borderWidth: 1,
+                borderRadius: 8,
+                padding: 10,
+                fontSize: 14,
+                color: colors.ink.DEFAULT,
+                marginBottom: 16,
+              }}
+            />
+
+            <View className="flex-row justify-end gap-2.5">
+              <Button
+                variant="secondary"
+                fullWidth={false}
+                onPress={() => setSelectedResolvingIssue(null)}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                testID="confirm-resolve-issue-button"
+                variant="primary"
+                fullWidth={false}
+                loading={resolveIssueMutation.isPending}
+                onPress={handleConfirmResolveIssue}
+              >
+                Confirm & Resolve
+              </Button>
+            </View>
           </View>
         </View>
       </Modal>

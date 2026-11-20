@@ -4,6 +4,7 @@ import StudentHomeScreen from '../index';
 import * as useAuthModule from '@/hooks/useAuth';
 import * as useMachinesModule from '@/hooks/useMachines';
 import * as useActiveSessionModule from '@/hooks/useActiveSession';
+import * as washService from '@/services/wash';
 import { MachineWithSession, HostelBlock } from '@/types';
 
 const mockPush = jest.fn();
@@ -320,5 +321,55 @@ describe('StudentHomeScreen', () => {
     });
 
     expect(mockPush).toHaveBeenCalledWith('/(student)/timer/session-active-1');
+  });
+
+  it('allows students to report an issue directly from the machine tile', async () => {
+    const reportSpy = jest
+      .spyOn(washService, 'reportMachineIssue')
+      .mockResolvedValue({ success: true });
+
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: mockMachines,
+      block: mockBlock,
+      totalCount: 4,
+      availableCount: 1,
+      inUseCount: 1,
+      brokenCount: 1,
+      maintenanceCount: 1,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { getByTestId, getByText } = await render(<StudentHomeScreen />);
+    expect(getByTestId('report-issue-tile-01')).toBeTruthy();
+
+    // Tap report issue icon on Machine 01 tile
+    await act(async () => {
+      fireEvent.press(getByTestId('report-issue-tile-01'));
+    });
+
+    expect(getByTestId('tile-report-issue-modal')).toBeTruthy();
+    expect(getByText(/Report machine issue/)).toBeTruthy();
+
+    // Enter description
+    await act(async () => {
+      fireEvent.changeText(
+        getByTestId('tile-issue-description-input'),
+        'Water puddling under drum'
+      );
+    });
+
+    // Submit report
+    await act(async () => {
+      fireEvent.press(getByTestId('submit-tile-issue-button'));
+    });
+
+    expect(reportSpy).toHaveBeenCalledWith('m1', 'Water puddling under drum', '01');
+    expect(getByTestId('tile-issue-success')).toBeTruthy();
   });
 });

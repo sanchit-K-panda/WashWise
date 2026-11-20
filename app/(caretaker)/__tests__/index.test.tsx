@@ -301,4 +301,67 @@ describe('CaretakerHomeScreen', () => {
 
     expect(getByText('Drum not spinning during cycle')).toBeTruthy();
   });
+
+  it('allows caretaker to resolve an issue report and update machine status', async () => {
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: mockMachines,
+      block: mockBlock,
+      totalCount: 3,
+      availableCount: 1,
+      inUseCount: 1,
+      brokenCount: 1,
+      maintenanceCount: 0,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const resolveSpy = jest
+      .spyOn(caretakerService, 'resolveIssue')
+      .mockResolvedValue({ success: true });
+
+    const { getByTestId, getByText } = await renderScreen();
+
+    // Switch to issues tab
+    await act(async () => {
+      fireEvent.press(getByTestId('tab-issues'));
+    });
+
+    await waitFor(() => {
+      expect(getByTestId('resolve-issue-issue-1')).toBeTruthy();
+    });
+
+    // Tap Resolve Issue button
+    await act(async () => {
+      fireEvent.press(getByTestId('resolve-issue-issue-1'));
+    });
+
+    expect(getByTestId('resolve-issue-modal')).toBeTruthy();
+    expect(getByText('Resolve issue')).toBeTruthy();
+
+    // Select Available (Free) resulting status
+    await act(async () => {
+      fireEvent.press(getByTestId('resolve-status-available'));
+    });
+
+    // Enter note
+    await act(async () => {
+      fireEvent.changeText(getByTestId('resolve-note-input'), 'Motor belt realigned');
+    });
+
+    // Confirm resolution
+    await act(async () => {
+      fireEvent.press(getByTestId('confirm-resolve-issue-button'));
+    });
+
+    expect(resolveSpy).toHaveBeenCalledWith({
+      issueId: 'issue-1',
+      resultingMachineStatus: 'available',
+      resolutionNote: 'Motor belt realigned',
+    });
+  });
 });
