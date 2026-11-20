@@ -1,6 +1,14 @@
 import { TimerCalculationParams, TimerCalculationResult } from '@/types';
 
 /**
+ * Calculates load adjustment minutes based on weight and perKgMinutes rate.
+ */
+export function calculateLoadAdjustment(weightKg: number, perKgMinutes: number): number {
+  if (weightKg <= 0) return 0;
+  return Math.round(weightKg * perKgMinutes);
+}
+
+/**
  * Pure business logic for wash duration calculation.
  * Formula from PRD.md:
  * duration = base(program) + tempAdj(temp) + spinAdj(spin) + loadAdj(weight, machine.capacity_kg)
@@ -37,7 +45,7 @@ export function calculateWashDuration(params: TimerCalculationParams): TimerCalc
     };
   }
 
-  const loadMinutes = Math.round(weightKg * perKgMinutes);
+  const loadMinutes = calculateLoadAdjustment(weightKg, perKgMinutes);
   const totalMinutes = Math.max(1, baseMinutes + tempMinutes + spinMinutes + loadMinutes);
   const endsAt = new Date(startedAt.getTime() + totalMinutes * 60 * 1000);
 
@@ -54,6 +62,17 @@ export function calculateWashDuration(params: TimerCalculationParams): TimerCalc
  */
 export function formatDuration(minutes: number): string {
   return `${minutes} min`;
+}
+
+/**
+ * Formats end time and duration string according to DESIGN.md ("Ends 6:42 PM · 48 min").
+ */
+export function formatEndTime(endsAt: Date, durationMinutes: number): string {
+  const timeStr = endsAt.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return `Ends ${timeStr} · ${durationMinutes} min`;
 }
 
 /**

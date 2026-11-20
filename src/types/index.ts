@@ -26,6 +26,38 @@ export interface MachineWithSession extends Machine {
   progressPercent?: number;
 }
 
+export interface WashConfig {
+  programs: WashProgram[];
+  tempAdjustments: TempAdjustment[];
+  spinAdjustments: SpinAdjustment[];
+}
+
+export interface StartWashParams {
+  machineId: string;
+  programId: string;
+  temp: string;
+  spin: string;
+  weightKg: number;
+}
+
+export interface StartWashResultPayload {
+  session_id: string;
+  machine_id: string;
+  machine_label: string;
+  program_name: string;
+  duration_minutes: number;
+  started_at: string;
+  ends_at: string;
+  status: string;
+}
+
+export interface StartWashResponse {
+  success: boolean;
+  session?: StartWashResultPayload;
+  error?: string;
+  isRaceConflict?: boolean;
+}
+
 export interface TimerCalculationParams {
   baseMinutes: number;
   perKgMinutes: number;
