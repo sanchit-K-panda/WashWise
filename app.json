@@ -23,10 +23,6 @@
       },
       "package": "com.washwise.app"
     },
-    "plugins": [
-      "expo-router",
-      "expo-font",
-      "expo-secure-store"
-    ]
+    "plugins": ["expo-router", "expo-font", "expo-secure-store"]
   }
 }

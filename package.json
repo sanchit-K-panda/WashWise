@@ -8,8 +8,10 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "eslint .",
+    "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "prepare": "husky"
   },
   "dependencies": {
     "@expo-google-fonts/jetbrains-mono": "^0.4.1",
@@ -46,8 +48,10 @@
     "babel-preset-expo": "*",
     "eslint": "^9.39.5",
     "eslint-config-expo": "^58.0.4",
+    "husky": "^9.1.7",
     "jest": "^30.5.2",
     "jest-expo": "^58.0.15",
+    "lint-staged": "^17.6.1",
     "prettier": "^3.10.1",
     "typescript": "~6.0.3"
   },
