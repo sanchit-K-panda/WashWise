@@ -1,4 +1,10 @@
-import { calculateWashDuration, formatDuration, formatRemainingTime } from './timer';
+import {
+  calculateWashDuration,
+  formatDuration,
+  formatRemainingTime,
+  calculateRemainingMinutes,
+  calculateProgressPercent,
+} from './timer';
 
 describe('calculateWashDuration', () => {
   const baseParams = {
@@ -75,5 +81,56 @@ describe('formatDuration and formatRemainingTime', () => {
     expect(formatRemainingTime(125)).toBe('02:05');
     expect(formatRemainingTime(0)).toBe('00:00');
     expect(formatRemainingTime(-10)).toBe('00:00');
+  });
+});
+
+describe('calculateRemainingMinutes', () => {
+  it('calculates remaining minutes correctly when cycle is active', () => {
+    const now = new Date('2026-11-20T10:00:00Z');
+    const endsAt = new Date('2026-11-20T10:14:30Z');
+
+    const remaining = calculateRemainingMinutes(endsAt, now);
+    expect(remaining).toBe(15); // ceiling of 14.5 minutes
+  });
+
+  it('returns 0 when cycle has ended or is past endsAt', () => {
+    const now = new Date('2026-11-20T10:30:00Z');
+    const endsAt = new Date('2026-11-20T10:20:00Z');
+
+    expect(calculateRemainingMinutes(endsAt, now)).toBe(0);
+  });
+
+  it('handles invalid dates gracefully returning 0', () => {
+    expect(calculateRemainingMinutes('invalid-date')).toBe(0);
+  });
+});
+
+describe('calculateProgressPercent', () => {
+  it('calculates progress percentage accurately', () => {
+    const startedAt = new Date('2026-11-20T10:00:00Z');
+    const endsAt = new Date('2026-11-20T10:50:00Z'); // 50 min total
+    const now = new Date('2026-11-20T10:25:00Z'); // 25 min elapsed (50%)
+
+    expect(calculateProgressPercent(startedAt, endsAt, now)).toBe(50);
+  });
+
+  it('returns 0 if current time is before or at start', () => {
+    const startedAt = new Date('2026-11-20T10:00:00Z');
+    const endsAt = new Date('2026-11-20T10:50:00Z');
+    const now = new Date('2026-11-20T09:55:00Z');
+
+    expect(calculateProgressPercent(startedAt, endsAt, now)).toBe(0);
+  });
+
+  it('caps at 100% when current time is after endsAt', () => {
+    const startedAt = new Date('2026-11-20T10:00:00Z');
+    const endsAt = new Date('2026-11-20T10:50:00Z');
+    const now = new Date('2026-11-20T11:00:00Z');
+
+    expect(calculateProgressPercent(startedAt, endsAt, now)).toBe(100);
+  });
+
+  it('returns 0 for invalid inputs', () => {
+    expect(calculateProgressPercent('invalid', 'date')).toBe(0);
   });
 });

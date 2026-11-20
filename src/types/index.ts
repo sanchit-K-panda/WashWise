@@ -1,4 +1,4 @@
-import { Tables } from './database';
+import { Tables, WashSessionStatus } from './database';
 
 export * from './database';
 
@@ -11,6 +11,20 @@ export type SpinAdjustment = Tables<'spin_adjustments'>;
 export type WashSession = Tables<'wash_sessions'>;
 export type IssueReport = Tables<'issue_reports'>;
 export type StatusLog = Tables<'status_log'>;
+
+export interface ActiveWashSession {
+  id: string;
+  machine_id: string;
+  started_at: string;
+  ends_at: string;
+  status: WashSessionStatus;
+}
+
+export interface MachineWithSession extends Machine {
+  activeSession?: ActiveWashSession | null;
+  timeLeftMinutes?: number;
+  progressPercent?: number;
+}
 
 export interface TimerCalculationParams {
   baseMinutes: number;

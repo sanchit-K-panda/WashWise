@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { Text, RefreshControl } from 'react-native';
 import { Screen } from '../Screen';
 
 describe('Screen', () => {
@@ -37,5 +37,19 @@ describe('Screen', () => {
 
     expect(getByLabelText('Offline banner')).toBeTruthy();
     expect(getByText('Offline · Last synced 10:45 AM')).toBeTruthy();
+  });
+
+  it('renders with scrollable and refreshControl', async () => {
+    const onRefreshMock = jest.fn();
+    const { getByText } = await render(
+      <Screen
+        scrollable
+        refreshControl={<RefreshControl refreshing={false} onRefresh={onRefreshMock} />}
+      >
+        <Text>Scrollable content</Text>
+      </Screen>
+    );
+
+    expect(getByText('Scrollable content')).toBeTruthy();
   });
 });

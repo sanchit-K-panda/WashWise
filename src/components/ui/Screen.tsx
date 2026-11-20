@@ -16,6 +16,7 @@ export interface ScreenProps {
   children: React.ReactNode;
   header?: ScreenHeaderProps;
   scrollable?: boolean;
+  refreshControl?: React.ReactElement;
   offlineBanner?: {
     isOffline: boolean;
     lastSyncedAt?: string;
@@ -30,6 +31,7 @@ export const Screen: React.FC<ScreenProps> = ({
   children,
   header,
   scrollable = false,
+  refreshControl,
   offlineBanner,
   stickyFooter,
   style,
@@ -88,6 +90,7 @@ export const Screen: React.FC<ScreenProps> = ({
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.contentContainer, contentContainerStyle]}
+          refreshControl={refreshControl}
         >
           {children}
         </ScrollView>

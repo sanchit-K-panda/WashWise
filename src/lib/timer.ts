@@ -67,3 +67,41 @@ export function formatRemainingTime(remainingSeconds: number): string {
   const secs = remainingSeconds % 60;
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
+
+/**
+ * Calculates remaining minutes until endsAt from a reference time.
+ * Returns 0 if already expired.
+ */
+export function calculateRemainingMinutes(endsAt: string | Date, now: Date = new Date()): number {
+  const endMs = new Date(endsAt).getTime();
+  const currentMs = now.getTime();
+  if (isNaN(endMs) || endMs <= currentMs) {
+    return 0;
+  }
+  return Math.ceil((endMs - currentMs) / (60 * 1000));
+}
+
+/**
+ * Calculates the progress percentage (0 to 100) of a wash cycle.
+ */
+export function calculateProgressPercent(
+  startedAt: string | Date,
+  endsAt: string | Date,
+  now: Date = new Date()
+): number {
+  const startMs = new Date(startedAt).getTime();
+  const endMs = new Date(endsAt).getTime();
+  const currentMs = now.getTime();
+
+  if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) {
+    return 0;
+  }
+
+  const totalDuration = endMs - startMs;
+  const elapsed = currentMs - startMs;
+
+  if (elapsed <= 0) return 0;
+  if (elapsed >= totalDuration) return 100;
+
+  return Math.round((elapsed / totalDuration) * 100);
+}

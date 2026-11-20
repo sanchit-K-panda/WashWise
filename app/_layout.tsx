@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Stack, SplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   useFonts,
   PlusJakartaSans_400Regular,
@@ -20,6 +21,15 @@ import { colors } from '@/theme/tokens';
 import { AuthProvider } from '@/hooks/useAuth';
 
 SplashScreen.preventAutoHideAsync();
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 1000 * 15,
+    },
+  },
+});
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -55,15 +65,17 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.bg },
-          animation: 'fade',
-        }}
-      />
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bg },
+            animation: 'fade',
+          }}
+        />
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
