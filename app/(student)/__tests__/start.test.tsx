@@ -226,4 +226,38 @@ describe('StartWashScreen', () => {
     });
     expect(mockReplace).toHaveBeenCalledWith('/(student)');
   });
+
+  it('renders loading skeleton state when config or machine is loading', async () => {
+    (useWashConfig as jest.Mock).mockReturnValue({
+      machine: null,
+      config: mockConfig,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    const { getByTestId } = await renderComponent();
+    expect(getByTestId('start-loading')).toBeTruthy();
+  });
+
+  it('renders machine-not-found state if machine cannot be located', async () => {
+    (useWashConfig as jest.Mock).mockReturnValue({
+      machine: null,
+      config: mockConfig,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    const { getByTestId, getByText } = await renderComponent();
+    expect(getByTestId('machine-not-found')).toBeTruthy();
+    expect(getByText('Machine not found')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(getByText('Back to machines'));
+    });
+    expect(mockReplace).toHaveBeenCalledWith('/(student)');
+  });
 });

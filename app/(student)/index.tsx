@@ -117,7 +117,8 @@ export default function StudentHomeScreen() {
             accessibilityRole="button"
             accessibilityLabel="Sign out"
             onPress={signOut}
-            className="w-10 h-10 items-center justify-center -mr-2 rounded-full active:bg-sky-50"
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            className="w-12 h-12 items-center justify-center -mr-2 rounded-full active:bg-sky-50"
           >
             <LogOut size={18} strokeWidth={1.75} color={colors.ink.muted} />
           </Pressable>
@@ -278,10 +279,10 @@ export default function StudentHomeScreen() {
                         e.stopPropagation();
                         handleOpenReportModal(machine);
                       }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      className="w-5 h-5 items-center justify-center rounded-full active:bg-sky-50"
+                      hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+                      className="w-6 h-6 items-center justify-center rounded-full active:bg-sky-50"
                     >
-                      <AlertTriangle size={13} strokeWidth={1.75} color={colors.ink.muted} />
+                      <AlertTriangle size={14} strokeWidth={1.75} color={colors.ink.muted} />
                     </Pressable>
 
                     {isBroken ? (
@@ -358,7 +359,8 @@ export default function StudentHomeScreen() {
                 accessibilityLabel="Close report modal"
                 accessibilityRole="button"
                 onPress={handleCloseReportModal}
-                className="w-8 h-8 items-center justify-center -mr-1 rounded-full active:bg-sky-50"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                className="w-10 h-10 items-center justify-center -mr-2 rounded-full active:bg-sky-50"
               >
                 <X size={18} strokeWidth={1.75} color={colors.ink.muted} />
               </Pressable>
@@ -382,6 +384,7 @@ export default function StudentHomeScreen() {
 
                 <TextInput
                   testID="tile-issue-description-input"
+                  accessibilityLabel="Issue description"
                   value={reportDescription}
                   onChangeText={setReportDescription}
                   placeholder="e.g. Door won't lock, water leak, unusual noise…"

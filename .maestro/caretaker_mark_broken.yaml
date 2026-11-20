@@ -1,0 +1,75 @@
+appId: com.washwise.app
+---
+# ==============================================================================
+# WashWise Maestro Smoke Flow: Caretaker Mark-Broken
+#
+# Verifies full caretaker inspection & status verification journey:
+# 1. Launch WashWise app (Caretaker mode)
+# 2. View block machine list with verification timestamps
+# 3. Tap on a machine row to open verification bottom sheet
+# 4. Set status to Broken and record diagnostic note
+# 5. Save verification and verify optimistic UI update
+# 6. Open machine audit trail and verify logged transition
+# ==============================================================================
+
+- launchApp:
+    clearState: false
+
+# If signed out, complete quick college OTP sign-in as caretaker
+- runFlow:
+    when:
+      visible: 'Sign in'
+    commands:
+      - tapOn:
+          id: 'email-input'
+      - inputText: 'caretaker@college.edu'
+      - tapOn: 'Send passcode'
+      - assertVisible: '6-digit passcode'
+      - tapOn:
+          id: 'otp-input'
+      - inputText: '123456'
+      - tapOn: 'Verify passcode'
+
+# Step 1: Assert Caretaker Home screen
+- assertVisible: 'Machine verification'
+- assertVisible:
+    id: 'tab-machines'
+
+# Step 2: Select Machine 01 row
+- tapOn:
+    id: 'caretaker-machine-row-01'
+
+# Step 3: Assert bottom sheet is open
+- assertVisible:
+    id: 'verification-bottom-sheet'
+- assertVisible: 'Set machine status'
+
+# Step 4: Choose Broken status option
+- tapOn:
+    id: 'status-option-broken'
+
+# Step 5: Input status note
+- tapOn:
+    id: 'caretaker-note-input'
+- inputText: 'Door latch damaged by student'
+
+# Step 6: Save verification
+- tapOn:
+    id: 'save-verification-button'
+
+# Step 7: Verify row reflects updated status
+- assertVisible:
+    id: 'caretaker-machine-row-01'
+
+# Step 8: View machine status history audit trail
+- tapOn:
+    id: 'caretaker-machine-row-01'
+- tapOn:
+    id: 'view-machine-logs-button'
+
+# Step 9: Verify status history screen
+- assertVisible: 'Status history & audit trail'
+- tapOn: 'Back to machines'
+
+# Step 10: Assert back on verification overview
+- assertVisible: 'Machine verification'

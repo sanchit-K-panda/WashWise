@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, History, CheckCircle2 } from 'lucide-react-native';
+import { ArrowRight, History, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { colors } from '@/theme/tokens';
 import { Screen, Text, Chip, Skeleton, Button } from '@/components/ui';
 import { fetchMachineById } from '@/services/wash';
@@ -40,6 +40,39 @@ export default function CaretakerMachineLogScreen() {
 
   const isLoading = isMachineLoading || isLogsLoading;
   const machineLabel = machine?.label || '01';
+
+  // Guard: Machine not found
+  if (!isLoading && !machine) {
+    return (
+      <Screen
+        header={{
+          title: 'Machine Audit Log',
+          subtitle: 'Unavailable',
+          onBack: () => router.back(),
+        }}
+      >
+        <View
+          testID="machine-not-found"
+          className="p-6 rounded-md border border-hairline bg-surface items-center text-center my-8"
+        >
+          <AlertCircle size={32} strokeWidth={1.75} color={colors.ink.muted} />
+          <Text variant="section" color="ink" style={{ textAlign: 'center', marginTop: 12 }}>
+            Machine not found
+          </Text>
+          <Text
+            variant="body"
+            color="muted"
+            style={{ textAlign: 'center', marginTop: 4, marginBottom: 16 }}
+          >
+            The requested washing machine could not be located in this hostel block.
+          </Text>
+          <Button variant="secondary" onPress={() => router.back()}>
+            Back to machines
+          </Button>
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen

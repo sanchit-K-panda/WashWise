@@ -33,4 +33,12 @@ describe('Chip', () => {
     fireEvent.press(chip);
     expect(onPressMock).toHaveBeenCalledTimes(1);
   });
+
+  it('provides hitSlop for filter chip to satisfy 48px touch target', async () => {
+    const { getByRole } = await render(
+      <Chip variant="filter" label="Normal" onPress={jest.fn()} />
+    );
+    const chip = getByRole('button');
+    expect(chip.props.hitSlop).toEqual({ top: 8, bottom: 8, left: 6, right: 6 });
+  });
 });

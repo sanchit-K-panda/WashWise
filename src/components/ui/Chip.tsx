@@ -69,7 +69,9 @@ export const Chip: React.FC<ChipProps> = ({
         style={[styles.base, styles.statusContainer, style]}
       >
         <IconComponent size={14} strokeWidth={2} color={config.color} />
-        <Text style={[styles.text, { color: config.color }]}>{displayLabel}</Text>
+        <Text allowFontScaling style={[styles.text, { color: config.color }]}>
+          {displayLabel}
+        </Text>
       </View>
     );
   }
@@ -83,6 +85,7 @@ export const Chip: React.FC<ChipProps> = ({
         accessibilityRole="button"
         accessibilityState={{ selected }}
         accessibilityLabel={accessibilityLabel || label}
+        hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
         style={[
           styles.base,
           styles.filterContainer,
@@ -99,6 +102,7 @@ export const Chip: React.FC<ChipProps> = ({
           />
         )}
         <Text
+          allowFontScaling
           style={[styles.text, selected ? styles.filterTextSelected : styles.filterTextUnselected]}
         >
           {label}
@@ -116,7 +120,9 @@ export const Chip: React.FC<ChipProps> = ({
       style={[styles.base, styles.neutralContainer, style]}
     >
       <NeutralIcon size={14} strokeWidth={1.75} color={colors.ink.muted} />
-      <Text style={[styles.text, styles.neutralText]}>{label}</Text>
+      <Text allowFontScaling style={[styles.text, styles.neutralText]}>
+        {label}
+      </Text>
     </View>
   );
 };

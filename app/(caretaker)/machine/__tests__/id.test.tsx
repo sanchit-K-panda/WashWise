@@ -104,4 +104,20 @@ describe('CaretakerMachineLogScreen', () => {
 
     expect(getByText('No status changes logged')).toBeTruthy();
   });
+
+  it('renders machine-not-found state when machine cannot be retrieved', async () => {
+    jest.spyOn(washService, 'fetchMachineById').mockResolvedValue(null);
+    jest.spyOn(caretakerService, 'fetchMachineStatusLogs').mockResolvedValue([]);
+
+    const { getByTestId, getByText } = await renderScreen();
+
+    await waitFor(() => {
+      expect(getByTestId('machine-not-found')).toBeTruthy();
+    });
+
+    expect(getByText('Machine not found')).toBeTruthy();
+    expect(
+      getByText('The requested washing machine could not be located in this hostel block.')
+    ).toBeTruthy();
+  });
 });

@@ -270,7 +270,8 @@ export default function CaretakerHomeScreen() {
             accessibilityRole="button"
             accessibilityLabel="Sign out"
             onPress={signOut}
-            className="w-10 h-10 items-center justify-center -mr-2 rounded-full active:bg-sky-50"
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            className="w-12 h-12 items-center justify-center -mr-2 rounded-full active:bg-sky-50"
           >
             <LogOut size={18} strokeWidth={1.75} color={colors.ink.muted} />
           </Pressable>
@@ -295,7 +296,7 @@ export default function CaretakerHomeScreen() {
         <Pressable
           testID="tab-machines"
           onPress={() => setActiveTab('machines')}
-          className={`flex-1 py-2 items-center rounded-sm ${
+          className={`flex-1 py-3 items-center justify-center min-h-[48px] rounded-sm ${
             activeTab === 'machines' ? 'bg-white border border-hairline' : ''
           }`}
           accessibilityRole="tab"
@@ -313,7 +314,7 @@ export default function CaretakerHomeScreen() {
         <Pressable
           testID="tab-issues"
           onPress={() => setActiveTab('issues')}
-          className={`flex-1 py-2 items-center rounded-sm ${
+          className={`flex-1 py-3 items-center justify-center min-h-[48px] rounded-sm ${
             activeTab === 'issues' ? 'bg-white border border-hairline' : ''
           }`}
           accessibilityRole="tab"
@@ -348,6 +349,19 @@ export default function CaretakerHomeScreen() {
                   </View>
                 </View>
               ))}
+            </View>
+          ) : machines.length === 0 ? (
+            <View
+              testID="no-machines-state"
+              className="p-8 bg-surface border border-hairline rounded-md items-center text-center my-6"
+            >
+              <CheckCircle2 size={32} strokeWidth={1.75} color={colors.ink.muted} />
+              <Text variant="section" color="ink" style={{ textAlign: 'center', marginTop: 12 }}>
+                No machines found
+              </Text>
+              <Text variant="caption" color="muted" style={{ textAlign: 'center', marginTop: 4 }}>
+                No washing machines are registered in this hostel block.
+              </Text>
             </View>
           ) : (
             machines.map((machine) => {
@@ -493,7 +507,8 @@ export default function CaretakerHomeScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Close verification sheet"
                   onPress={handleCloseSheet}
-                  className="w-8 h-8 items-center justify-center rounded-full active:bg-sky-50"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  className="w-10 h-10 items-center justify-center rounded-full active:bg-sky-50"
                 >
                   <X size={20} strokeWidth={1.75} color={colors.ink.muted} />
                 </Pressable>
@@ -588,6 +603,7 @@ export default function CaretakerHomeScreen() {
                 </Text>
                 <TextInput
                   testID="caretaker-note-input"
+                  accessibilityLabel="Caretaker status note"
                   value={noteText}
                   onChangeText={setNoteText}
                   placeholder="e.g. Technician arriving at 3 PM, drum cleaned…"
@@ -705,7 +721,8 @@ export default function CaretakerHomeScreen() {
                 accessibilityLabel="Close resolve dialog"
                 accessibilityRole="button"
                 onPress={() => setSelectedResolvingIssue(null)}
-                className="w-8 h-8 items-center justify-center -mr-1 rounded-full active:bg-sky-50"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                className="w-10 h-10 items-center justify-center -mr-1 rounded-full active:bg-sky-50"
               >
                 <X size={18} strokeWidth={1.75} color={colors.ink.muted} />
               </Pressable>
@@ -794,6 +811,7 @@ export default function CaretakerHomeScreen() {
             </Text>
             <TextInput
               testID="resolve-note-input"
+              accessibilityLabel="Resolution note"
               value={resolveNote}
               onChangeText={setResolveNote}
               placeholder="e.g. Door latch adjusted, verified spin cycle…"

@@ -32,4 +32,10 @@ describe('Text', () => {
       expect.arrayContaining([expect.objectContaining({ color: '#1E9E6A' })])
     );
   });
+
+  it('enables dynamic type via allowFontScaling by default', async () => {
+    const { getByText } = await render(<Text>Dynamic type enabled</Text>);
+    const textElement = getByText('Dynamic type enabled');
+    expect(textElement.props.allowFontScaling).toBe(true);
+  });
 });

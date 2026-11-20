@@ -34,4 +34,10 @@ describe('Button', () => {
     expect(queryByText('Start wash')).toBeNull();
     expect(getByTestId('button-loading-indicator')).toBeTruthy();
   });
+
+  it('provides hitSlop for small size button to satisfy 48px touch target', async () => {
+    const { getByRole } = await render(<Button size="sm">Action</Button>);
+    const button = getByRole('button');
+    expect(button.props.hitSlop).toEqual({ top: 6, bottom: 6, left: 6, right: 6 });
+  });
 });

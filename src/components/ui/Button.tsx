@@ -8,6 +8,7 @@ import {
   StyleSheet,
   StyleProp,
   ViewStyle,
+  Insets,
 } from 'react-native';
 import { colors, radius, spacing } from '@/theme/tokens';
 
@@ -23,6 +24,7 @@ export interface ButtonProps extends Omit<PressableProps, 'style'> {
   rightIcon?: React.ReactNode;
   fullWidth?: boolean;
   style?: StyleProp<ViewStyle>;
+  hitSlop?: Insets | number;
   children: React.ReactNode;
 }
 
@@ -35,6 +37,7 @@ export const Button: React.FC<ButtonProps> = ({
   rightIcon,
   fullWidth = true,
   style,
+  hitSlop,
   children,
   accessibilityLabel,
   accessibilityRole = 'button',
@@ -42,12 +45,17 @@ export const Button: React.FC<ButtonProps> = ({
 }) => {
   const isInteractive = !disabled && !loading;
 
+  // Ensure minimum 48px touch target for small buttons via hitSlop
+  const resolvedHitSlop =
+    hitSlop ?? (size === 'sm' ? { top: 6, bottom: 6, left: 6, right: 6 } : undefined);
+
   return (
     <Pressable
       disabled={!isInteractive}
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: !isInteractive, busy: loading }}
+      hitSlop={resolvedHitSlop}
       style={({ pressed }) => [
         styles.base,
         sizeStyles[size],
@@ -69,6 +77,7 @@ export const Button: React.FC<ButtonProps> = ({
         <View style={styles.contentRow}>
           {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
           <Text
+            allowFontScaling
             style={[
               styles.textBase,
               sizeTextStyles[size],

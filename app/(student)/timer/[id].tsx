@@ -405,7 +405,8 @@ export default function TimerScreen() {
                 accessibilityLabel="Close report modal"
                 accessibilityRole="button"
                 onPress={() => setIsIssueModalVisible(false)}
-                className="w-8 h-8 items-center justify-center -mr-1 rounded-full active:bg-sky-50"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                className="w-10 h-10 items-center justify-center -mr-2 rounded-full active:bg-sky-50"
               >
                 <X size={18} strokeWidth={1.75} color={colors.ink.muted} />
               </Pressable>
@@ -429,6 +430,7 @@ export default function TimerScreen() {
 
                 <TextInput
                   testID="issue-description-input"
+                  accessibilityLabel="Issue description"
                   value={issueDescription}
                   onChangeText={setIssueDescription}
                   placeholder="e.g. Door won't unlock, water leak, loud vibrations…"

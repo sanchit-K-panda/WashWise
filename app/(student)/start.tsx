@@ -5,7 +5,7 @@ import { Minus, Plus, AlertTriangle, AlertCircle } from 'lucide-react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { colors } from '@/theme/tokens';
 import { calculateWashDuration, formatEndTime } from '@/lib/timer';
-import { Screen, Text, Button, Chip } from '@/components/ui';
+import { Screen, Text, Button, Chip, Skeleton } from '@/components/ui';
 import { useWashConfig } from '@/hooks/useWashConfig';
 import { startWash } from '@/services/wash';
 import { scheduleWashNotifications } from '@/services/notifications';
@@ -127,6 +127,69 @@ export default function StartWashScreen() {
     queryClient.invalidateQueries({ queryKey: ['active_session'] });
     router.replace(`/(student)/timer/${result.session.session_id}`);
   };
+
+  // Loading skeleton state
+  if (isLoading) {
+    return (
+      <Screen
+        header={{
+          title: 'Start Wash',
+          subtitle: 'Loading machine settings…',
+          onBack: () => router.back(),
+        }}
+      >
+        <View testID="start-loading" className="space-y-6 gap-6 py-2">
+          <View>
+            <Skeleton.Line width={120} style={{ marginBottom: 12, height: 20 }} />
+            <View className="flex-row gap-2">
+              <Skeleton.Line width={90} style={{ height: 32 }} />
+              <Skeleton.Line width={90} style={{ height: 32 }} />
+              <Skeleton.Line width={90} style={{ height: 32 }} />
+            </View>
+          </View>
+          <View>
+            <Skeleton.Line width={100} style={{ marginBottom: 12, height: 20 }} />
+            <View className="flex-row gap-2">
+              <Skeleton.Line width="30%" style={{ height: 32 }} />
+              <Skeleton.Line width="30%" style={{ height: 32 }} />
+              <Skeleton.Line width="30%" style={{ height: 32 }} />
+            </View>
+          </View>
+          <View>
+            <Skeleton.Line width={110} style={{ marginBottom: 12, height: 20 }} />
+            <Skeleton.Card height={96} />
+          </View>
+        </View>
+      </Screen>
+    );
+  }
+
+  // Guard: Machine not found
+  if (!isLoading && !machine) {
+    return (
+      <Screen header={{ title: 'Start Wash', onBack: () => router.back() }}>
+        <View
+          testID="machine-not-found"
+          className="p-6 rounded-md border border-hairline bg-surface items-center text-center my-6"
+        >
+          <AlertCircle size={24} strokeWidth={1.75} color={colors.ink.muted} />
+          <Text variant="section" color="ink" style={{ textAlign: 'center', marginTop: 12 }}>
+            Machine not found
+          </Text>
+          <Text
+            variant="body"
+            color="muted"
+            style={{ textAlign: 'center', marginTop: 4, marginBottom: 16 }}
+          >
+            The selected washing machine could not be loaded.
+          </Text>
+          <Button variant="secondary" onPress={() => router.replace('/(student)')}>
+            Back to machines
+          </Button>
+        </View>
+      </Screen>
+    );
+  }
 
   // Guard: Machine is no longer available upfront
   if (!isLoading && machine && machine.status !== 'available') {

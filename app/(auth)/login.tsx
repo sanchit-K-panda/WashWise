@@ -115,7 +115,8 @@ export default function LoginScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Change email address"
                   onPress={handleChangeEmail}
-                  className="py-2 active:opacity-70"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  className="py-3 px-1 min-h-[48px] justify-center active:opacity-70"
                 >
                   <Text variant="caption" color="accent">
                     Change email
@@ -127,7 +128,8 @@ export default function LoginScreen() {
                   accessibilityLabel="Resend passcode"
                   disabled={isSubmitting}
                   onPress={handleResend}
-                  className="py-2 active:opacity-70"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  className="py-3 px-1 min-h-[48px] justify-center active:opacity-70"
                 >
                   <Text variant="caption" color="muted">
                     Resend code
@@ -174,6 +176,7 @@ export default function LoginScreen() {
             <Mail size={20} strokeWidth={1.75} color={colors.ink.muted} />
             <TextInput
               testID="email-input"
+              accessibilityLabel="College email address"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -199,6 +202,7 @@ export default function LoginScreen() {
             <KeyRound size={20} strokeWidth={1.75} color={colors.ink.muted} />
             <TextInput
               testID="otp-input"
+              accessibilityLabel="6-digit passcode"
               value={otp}
               onChangeText={setOtp}
               keyboardType="number-pad"

@@ -77,6 +77,7 @@ export const Text: React.FC<TextProps> = ({
   variant = 'body',
   color = 'ink',
   tabular,
+  allowFontScaling = true,
   style,
   children,
   ...rest
@@ -89,7 +90,7 @@ export const Text: React.FC<TextProps> = ({
   ];
 
   return (
-    <RNText style={combinedStyle} {...rest}>
+    <RNText allowFontScaling={allowFontScaling} style={combinedStyle} {...rest}>
       {children}
     </RNText>
   );

@@ -147,6 +147,31 @@ describe('CaretakerHomeScreen', () => {
     expect(getByText(/Not verified today/)).toBeTruthy();
   });
 
+  it('renders empty state when no machines are registered in this hostel block', async () => {
+    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
+      machines: [],
+      block: mockBlock,
+      totalCount: 0,
+      availableCount: 0,
+      inUseCount: 0,
+      brokenCount: 0,
+      maintenanceCount: 0,
+      isLoading: false,
+      isRefetching: false,
+      isError: false,
+      error: null,
+      isOffline: false,
+      lastSyncedAt: new Date(),
+      refetch: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { getByTestId, getByText } = await renderScreen();
+
+    expect(getByTestId('no-machines-state')).toBeTruthy();
+    expect(getByText('No machines found')).toBeTruthy();
+    expect(getByText('No washing machines are registered in this hostel block.')).toBeTruthy();
+  });
+
   it('opens bottom sheet when a machine is tapped', async () => {
     jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
       machines: mockMachines,

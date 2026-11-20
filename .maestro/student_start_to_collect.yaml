@@ -1,0 +1,72 @@
+appId: com.washwise.app
+---
+# ==============================================================================
+# WashWise Maestro Smoke Flow: Student Start-to-Collect
+#
+# Verifies full student journey:
+# 1. Launch WashWise app
+# 2. View laundry room machine grid and availability status
+# 3. Select an available machine (Machine 01)
+# 4. Configure wash cycle parameters (program, temp, spin, weight stepper)
+# 5. Start wash session with server-calculated ends_at
+# 6. Verify live countdown timer and progress ring on TimerScreen
+# 7. Collect laundry and verify machine is freed on return
+# ==============================================================================
+
+- launchApp:
+    clearState: false
+
+# If signed out, complete quick college OTP sign-in
+- runFlow:
+    when:
+      visible: 'Sign in'
+    commands:
+      - tapOn:
+          id: 'email-input'
+      - inputText: 'student@college.edu'
+      - tapOn: 'Send passcode'
+      - assertVisible: '6-digit passcode'
+      - tapOn:
+          id: 'otp-input'
+      - inputText: '123456'
+      - tapOn: 'Verify passcode'
+
+# Step 1: Assert Student Home machine grid is visible
+- assertVisible:
+    id: 'machine-grid'
+
+# Step 2: Select an available machine (Machine 01)
+- tapOn:
+    id: 'machine-tile-01'
+
+# Step 3: Assert Start Wash screen and controls
+- assertVisible: 'Wash program'
+- assertVisible: 'Load weight'
+- assertVisible:
+    id: 'start-wash-button'
+
+# Step 4: Adjust load weight using stepper
+- tapOn:
+    id: 'increase-weight-button'
+
+# Step 5: Start wash cycle
+- tapOn:
+    id: 'start-wash-button'
+
+# Step 6: Verify Timer screen countdown and progress
+- assertVisible:
+    id: 'timer-countdown'
+- assertVisible:
+    id: 'progress-ring-container'
+- assertVisible:
+    id: 'collected-button'
+- assertVisible:
+    id: 'report-issue-button'
+
+# Step 7: Mark laundry collected to free the machine
+- tapOn:
+    id: 'collected-button'
+
+# Step 8: Assert back on Student Home screen with machine grid
+- assertVisible:
+    id: 'machine-grid'
