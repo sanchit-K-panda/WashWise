@@ -31,7 +31,26 @@ describe('LoginScreen', () => {
     expect(getByLabelText('Send passcode')).toBeTruthy();
   });
 
-  it('shows error if email domain is not authorized', async () => {
+  it('shows error if email format is invalid', async () => {
+    const { getByTestId, getByLabelText, getByText } = await render(<LoginScreen />);
+
+    await act(async () => {
+      fireEvent.changeText(getByTestId('email-input'), 'invalid-email');
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('Send passcode'));
+    });
+
+    await waitFor(() => {
+      expect(getByText(/Please enter a valid email address/)).toBeTruthy();
+    });
+    expect(mockSignInWithOtp).not.toHaveBeenCalled();
+  });
+
+  it('transitions to OTP step upon successful passcode request with any valid email', async () => {
+    mockSignInWithOtp.mockResolvedValueOnce({ success: true });
+
     const { getByTestId, getByLabelText, getByText } = await render(<LoginScreen />);
 
     await act(async () => {
@@ -43,25 +62,7 @@ describe('LoginScreen', () => {
     });
 
     await waitFor(() => {
-      expect(getByText(/Only @college.edu/)).toBeTruthy();
-    });
-    expect(mockSignInWithOtp).not.toHaveBeenCalled();
-  });
-
-  it('transitions to OTP step upon successful passcode request', async () => {
-    mockSignInWithOtp.mockResolvedValueOnce({ success: true });
-
-    const { getByTestId, getByLabelText, getByText } = await render(<LoginScreen />);
-
-    await act(async () => {
-      fireEvent.changeText(getByTestId('email-input'), 'student@college.edu');
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('Send passcode'));
-    });
-
-    await waitFor(() => {
+      expect(mockSignInWithOtp).toHaveBeenCalledWith('student@gmail.com');
       expect(getByText('6-digit passcode')).toBeTruthy();
       expect(getByTestId('otp-input')).toBeTruthy();
     });

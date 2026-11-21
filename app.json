@@ -35,7 +35,7 @@
     "extra": {
       "supabaseUrl": "https://placeholder.supabase.co",
       "supabaseAnonKey": "placeholder-anon-key",
-      "collegeEmailDomain": "college.edu"
+      "collegeEmailDomain": "*"
     }
   }
 }

@@ -5,10 +5,12 @@ import { Profile, UserRole } from '@/types';
 export const ALLOWED_EMAIL_DOMAIN =
   process.env.EXPO_PUBLIC_COLLEGE_EMAIL_DOMAIN ||
   process.env.EXPO_PUBLIC_ALLOWED_EMAIL_DOMAIN ||
-  'college.edu';
+  '*';
 
 /**
- * Validates that an email is well-formed and belongs to the authorized college domain.
+ * Validates that an email is well-formed.
+ * If allowedDomain is set to a specific domain (e.g. 'college.edu'), enforces that domain.
+ * If allowedDomain is '*' or empty, permits any valid email address.
  */
 export function validateCollegeEmail(
   email: string,
@@ -26,11 +28,16 @@ export function validateCollegeEmail(
   }
 
   const parts = trimmed.split('@');
-  if (parts.length !== 2) {
+  if (parts.length !== 2 || !parts[1].includes('.')) {
     return {
       isValid: false,
       error: 'Invalid email format',
     };
+  }
+
+  // If allowedDomain is '*' or empty, all domains are permitted
+  if (!allowedDomain || allowedDomain === '*' || allowedDomain.toLowerCase() === 'all') {
+    return { isValid: true };
   }
 
   const domain = parts[1];
@@ -39,7 +46,7 @@ export function validateCollegeEmail(
   if (domain !== normalizedAllowed && !domain.endsWith(`.${normalizedAllowed}`)) {
     return {
       isValid: false,
-      error: `Only @${normalizedAllowed} college email addresses are permitted`,
+      error: `Only @${normalizedAllowed} email addresses are permitted`,
     };
   }
 

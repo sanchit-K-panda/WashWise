@@ -86,7 +86,9 @@ export default function LoginScreen() {
         title: 'Sign in',
         subtitle:
           step === 'email'
-            ? `Use your @${ALLOWED_EMAIL_DOMAIN} email to access hostel laundry.`
+            ? ALLOWED_EMAIL_DOMAIN && ALLOWED_EMAIL_DOMAIN !== '*'
+              ? `Use your @${ALLOWED_EMAIL_DOMAIN} email to access hostel laundry.`
+              : 'Enter your email address to access hostel laundry.'
             : `Enter the 6-digit passcode sent to ${email}.`,
       }}
       stickyFooter={
@@ -170,19 +172,23 @@ export default function LoginScreen() {
       {step === 'email' ? (
         <View className="mt-2">
           <Text variant="caption" style={{ marginBottom: 8 }}>
-            College email address
+            Email address
           </Text>
           <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
             <Mail size={20} strokeWidth={1.75} color={colors.ink.muted} />
             <TextInput
               testID="email-input"
-              accessibilityLabel="College email address"
+              accessibilityLabel="Email address"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder={`student@${ALLOWED_EMAIL_DOMAIN}`}
+              placeholder={
+                ALLOWED_EMAIL_DOMAIN && ALLOWED_EMAIL_DOMAIN !== '*'
+                  ? `student@${ALLOWED_EMAIL_DOMAIN}`
+                  : 'name@example.com'
+              }
               placeholderTextColor={colors.ink.muted}
               className="flex-1 font-sans text-ink text-[15px] ml-2"
               editable={!isSubmitting}

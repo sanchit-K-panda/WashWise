@@ -29,16 +29,11 @@ describe('Auth Service', () => {
   });
 
   describe('validateCollegeEmail', () => {
-    it('accepts valid college.edu email addresses', () => {
+    it('accepts any valid email address by default', () => {
       expect(validateCollegeEmail('student@college.edu').isValid).toBe(true);
-      expect(validateCollegeEmail('john.doe@hostel.college.edu').isValid).toBe(true);
-      expect(validateCollegeEmail('CARETAKER@COLLEGE.EDU').isValid).toBe(true);
-    });
-
-    it('rejects non-college domains', () => {
-      const result = validateCollegeEmail('user@gmail.com');
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('college.edu');
+      expect(validateCollegeEmail('john.doe@gmail.com').isValid).toBe(true);
+      expect(validateCollegeEmail('user@yahoo.co.in').isValid).toBe(true);
+      expect(validateCollegeEmail('CARETAKER@OUTLOOK.COM').isValid).toBe(true);
     });
 
     it('rejects invalid email formats', () => {
@@ -46,26 +41,33 @@ describe('Auth Service', () => {
       expect(validateCollegeEmail('@college.edu').isValid).toBe(false);
       expect(validateCollegeEmail('').isValid).toBe(false);
     });
+
+    it('enforces specific domain when restricted domain is provided', () => {
+      expect(validateCollegeEmail('student@college.edu', 'college.edu').isValid).toBe(true);
+      const result = validateCollegeEmail('user@gmail.com', 'college.edu');
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('college.edu');
+    });
   });
 
   describe('requestOtp', () => {
-    it('rejects non-college email without calling Supabase', async () => {
-      const result = await requestOtp('hacker@external.com');
+    it('rejects invalid email format without calling Supabase', async () => {
+      const result = await requestOtp('invalid-email-address');
       expect(result.success).toBe(false);
-      expect(result.error).toContain('college.edu');
+      expect(result.error).toContain('Please enter a valid email address');
       expect(supabase.auth.signInWithOtp).not.toHaveBeenCalled();
     });
 
-    it('calls supabase signInWithOtp for valid college email', async () => {
+    it('calls supabase signInWithOtp for valid email', async () => {
       (supabase.auth.signInWithOtp as jest.Mock).mockResolvedValueOnce({
         data: {},
         error: null,
       });
 
-      const result = await requestOtp('student@college.edu');
+      const result = await requestOtp('student@gmail.com');
       expect(result.success).toBe(true);
       expect(supabase.auth.signInWithOtp).toHaveBeenCalledWith({
-        email: 'student@college.edu',
+        email: 'student@gmail.com',
         options: { shouldCreateUser: true },
       });
     });
