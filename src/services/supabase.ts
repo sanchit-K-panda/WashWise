@@ -50,6 +50,12 @@ export const ExpoSecureStoreAdapter = {
   },
 };
 
+export const isPlaceholderSupabase =
+  process.env.NODE_ENV !== 'test' &&
+  (!process.env.EXPO_PUBLIC_SUPABASE_URL ||
+    process.env.EXPO_PUBLIC_SUPABASE_URL.includes('your-project-ref') ||
+    process.env.EXPO_PUBLIC_SUPABASE_URL.includes('placeholder.supabase.co'));
+
 const supabaseUrl =
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
   (Constants.expoConfig?.extra?.supabaseUrl as string) ||

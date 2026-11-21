@@ -22,7 +22,7 @@ export default function LoginScreen() {
 
     const validation = validateCollegeEmail(email);
     if (!validation.isValid) {
-      setErrorMessage(validation.error || 'Please enter a valid college email address');
+      setErrorMessage(validation.error || 'Please enter a valid email address');
       return;
     }
 
@@ -86,9 +86,7 @@ export default function LoginScreen() {
         title: 'Sign in',
         subtitle:
           step === 'email'
-            ? ALLOWED_EMAIL_DOMAIN && ALLOWED_EMAIL_DOMAIN !== '*'
-              ? `Use your @${ALLOWED_EMAIL_DOMAIN} email to access hostel laundry.`
-              : 'Enter your email address to access hostel laundry.'
+            ? 'Enter your email address to access hostel laundry.'
             : `Enter the 6-digit passcode sent to ${email}.`,
       }}
       stickyFooter={

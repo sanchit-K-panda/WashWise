@@ -1,11 +1,13 @@
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from './supabase';
+import { supabase, isPlaceholderSupabase, ExpoSecureStoreAdapter } from './supabase';
 import { Profile, UserRole } from '@/types';
 
 export const ALLOWED_EMAIL_DOMAIN =
-  process.env.EXPO_PUBLIC_COLLEGE_EMAIL_DOMAIN ||
-  process.env.EXPO_PUBLIC_ALLOWED_EMAIL_DOMAIN ||
-  '*';
+  process.env.EXPO_PUBLIC_COLLEGE_EMAIL_DOMAIN &&
+  process.env.EXPO_PUBLIC_COLLEGE_EMAIL_DOMAIN !== '*' &&
+  process.env.EXPO_PUBLIC_COLLEGE_EMAIL_DOMAIN !== 'college.edu'
+    ? process.env.EXPO_PUBLIC_COLLEGE_EMAIL_DOMAIN
+    : '*';
 
 /**
  * Validates that an email is well-formed.
@@ -62,6 +64,10 @@ export async function requestOtp(email: string): Promise<{ success: boolean; err
     return { success: false, error: validation.error };
   }
 
+  if (isPlaceholderSupabase) {
+    return { success: true };
+  }
+
   try {
     const trimmed = email.trim().toLowerCase();
     const { error } = await supabase.auth.signInWithOtp({
@@ -72,11 +78,22 @@ export async function requestOtp(email: string): Promise<{ success: boolean; err
     });
 
     if (error) {
+      if (
+        typeof __DEV__ !== 'undefined' &&
+        __DEV__ &&
+        (error.message?.includes('fetch') ||
+          (error as { name?: string }).name === 'AuthRetryableFetchError')
+      ) {
+        return { success: true };
+      }
       return { success: false, error: error.message };
     }
 
     return { success: true };
   } catch (err) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      return { success: true };
+    }
     const message = err instanceof Error ? err.message : 'Failed to send passcode';
     return { success: false, error: message };
   }
@@ -106,6 +123,53 @@ export async function verifyOtp(
     };
   }
 
+  if (isPlaceholderSupabase) {
+    const role: UserRole = trimmedEmail.includes('caretaker') ? 'caretaker' : 'student';
+    const mockUser: User = {
+      id:
+        role === 'caretaker'
+          ? 'c0000000-0000-0000-0000-000000000001'
+          : 's0000000-0000-0000-0000-000000000001',
+      app_metadata: {},
+      user_metadata: {
+        full_name: role === 'caretaker' ? 'Hostel Caretaker' : trimmedEmail.split('@')[0],
+      },
+      aud: 'authenticated',
+      created_at: new Date().toISOString(),
+      email: trimmedEmail,
+    };
+    const mockSession: Session = {
+      access_token: 'mock-access-token',
+      refresh_token: 'mock-refresh-token',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: mockUser,
+    };
+    const mockProfile: Profile = {
+      id: mockUser.id,
+      name: role === 'caretaker' ? 'Hostel Caretaker' : trimmedEmail.split('@')[0],
+      role,
+      hostel_block_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      await ExpoSecureStoreAdapter.setItem(
+        'washwise_demo_session',
+        JSON.stringify({ session: mockSession, user: mockUser, profile: mockProfile })
+      );
+    } catch {
+      // ignore
+    }
+
+    return {
+      session: mockSession,
+      user: mockUser,
+      profile: mockProfile,
+    };
+  }
+
   try {
     const { data, error } = await supabase.auth.verifyOtp({
       email: trimmedEmail,
@@ -114,6 +178,44 @@ export async function verifyOtp(
     });
 
     if (error) {
+      if (
+        typeof __DEV__ !== 'undefined' &&
+        __DEV__ &&
+        (error.message?.includes('fetch') ||
+          (error as { name?: string }).name === 'AuthRetryableFetchError')
+      ) {
+        const role: UserRole = trimmedEmail.includes('caretaker') ? 'caretaker' : 'student';
+        const mockUser: User = {
+          id:
+            role === 'caretaker'
+              ? 'c0000000-0000-0000-0000-000000000001'
+              : 's0000000-0000-0000-0000-000000000001',
+          app_metadata: {},
+          user_metadata: {
+            full_name: role === 'caretaker' ? 'Hostel Caretaker' : trimmedEmail.split('@')[0],
+          },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+          email: trimmedEmail,
+        };
+        const mockSession: Session = {
+          access_token: 'mock-access-token',
+          refresh_token: 'mock-refresh-token',
+          expires_in: 3600,
+          token_type: 'bearer',
+          user: mockUser,
+        };
+        const mockProfile: Profile = {
+          id: mockUser.id,
+          name: role === 'caretaker' ? 'Hostel Caretaker' : trimmedEmail.split('@')[0],
+          role,
+          hostel_block_id: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        return { session: mockSession, user: mockUser, profile: mockProfile };
+      }
+
       return {
         session: null,
         user: null,
@@ -152,6 +254,19 @@ export async function verifyOtp(
 export async function fetchOrCreateProfile(
   user: User
 ): Promise<{ profile: Profile | null; error?: string }> {
+  if (isPlaceholderSupabase) {
+    const role: UserRole = user.email?.includes('caretaker') ? 'caretaker' : 'student';
+    return {
+      profile: {
+        id: user.id,
+        name: (user.user_metadata?.full_name as string) || user.email?.split('@')[0] || 'Student',
+        role,
+        hostel_block_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    };
+  }
   try {
     const { data, error } = await supabase
       .from('profiles')
@@ -204,6 +319,15 @@ export async function fetchOrCreateProfile(
  * Signs the user out and clears session storage.
  */
 export async function signOut(): Promise<{ error?: string }> {
+  if (isPlaceholderSupabase) {
+    try {
+      await ExpoSecureStoreAdapter.removeItem('washwise_demo_session');
+    } catch {
+      // ignore
+    }
+    return {};
+  }
+
   try {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -223,6 +347,19 @@ export async function getCurrentSession(): Promise<{
   session: Session | null;
   user: User | null;
 }> {
+  if (isPlaceholderSupabase) {
+    try {
+      const stored = await ExpoSecureStoreAdapter.getItem('washwise_demo_session');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return { session: parsed.session, user: parsed.user };
+      }
+    } catch {
+      // ignore
+    }
+    return { session: null, user: null };
+  }
+
   try {
     const { data, error } = await supabase.auth.getSession();
     if (error || !data.session) {

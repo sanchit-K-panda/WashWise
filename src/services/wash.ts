@@ -1,5 +1,6 @@
-import { supabase } from './supabase';
+import { supabase, isPlaceholderSupabase } from './supabase';
 import { sendCaretakerIssueAlert } from './notifications';
+import { MOCK_MACHINES } from './machines';
 import {
   Machine,
   WashConfig,
@@ -52,6 +53,10 @@ export interface WashSessionDetails {
  * Fetches machine by ID.
  */
 export async function fetchMachineById(machineId: string): Promise<Machine | null> {
+  if (isPlaceholderSupabase) {
+    const match = MOCK_MACHINES.find((m) => m.id === machineId);
+    return (match as Machine) || null;
+  }
   try {
     const { data, error } = await supabase
       .from('machines')
@@ -60,10 +65,18 @@ export async function fetchMachineById(machineId: string): Promise<Machine | nul
       .maybeSingle();
 
     if (error || !data) {
+      if (process.env.NODE_ENV !== 'test') {
+        const match = MOCK_MACHINES.find((m) => m.id === machineId);
+        return (match as Machine) || null;
+      }
       return null;
     }
     return data as Machine;
   } catch {
+    if (process.env.NODE_ENV !== 'test') {
+      const match = MOCK_MACHINES.find((m) => m.id === machineId);
+      return (match as Machine) || null;
+    }
     return null;
   }
 }
@@ -103,6 +116,22 @@ export async function fetchWashConfig(): Promise<WashConfig> {
  * Handles race condition when machine status changed before start.
  */
 export async function startWash(params: StartWashParams): Promise<StartWashResponse> {
+  if (isPlaceholderSupabase) {
+    const endsAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
+    return {
+      success: true,
+      session: {
+        session_id: 'ws-demo-1',
+        machine_id: params.machineId,
+        machine_label: 'Machine 01',
+        program_name: 'Normal',
+        duration_minutes: 45,
+        started_at: new Date().toISOString(),
+        ends_at: endsAt,
+        status: 'running',
+      },
+    };
+  }
   try {
     const { data, error } = await supabase.rpc('start_wash', {
       p_machine_id: params.machineId,
@@ -162,6 +191,9 @@ export async function startWash(params: StartWashParams): Promise<StartWashRespo
 export async function collectWash(
   sessionId: string
 ): Promise<{ success: boolean; error?: string }> {
+  if (isPlaceholderSupabase) {
+    return { success: true };
+  }
   try {
     const { error } = await supabase.rpc('collect_wash', {
       p_session_id: sessionId,

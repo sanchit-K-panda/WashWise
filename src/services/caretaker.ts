@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, isPlaceholderSupabase } from './supabase';
 import {
   VerifyMachineParams,
   ForceClearMachineParams,
@@ -14,6 +14,9 @@ import {
 export async function updateMachineStatus(
   params: VerifyMachineParams
 ): Promise<{ success: boolean; error?: string }> {
+  if (isPlaceholderSupabase) {
+    return { success: true };
+  }
   try {
     const { error } = await supabase.rpc('verify_machine_status', {
       p_machine_id: params.machineId,
@@ -53,6 +56,9 @@ export async function updateMachineStatus(
 export async function forceClearMachine(
   params: ForceClearMachineParams
 ): Promise<{ success: boolean; error?: string }> {
+  if (isPlaceholderSupabase) {
+    return { success: true };
+  }
   try {
     const { error } = await supabase.rpc('force_clear_machine', {
       p_machine_id: params.machineId,
@@ -146,6 +152,9 @@ export async function fetchBlockIssues(blockId: string): Promise<IssueReportWith
 export async function resolveIssue(
   params: ResolveIssueParams | string
 ): Promise<{ success: boolean; error?: string }> {
+  if (isPlaceholderSupabase) {
+    return { success: true };
+  }
   try {
     const issueId = typeof params === 'string' ? params : params.issueId;
     const resultingStatus = typeof params === 'object' ? params.resultingMachineStatus : null;
