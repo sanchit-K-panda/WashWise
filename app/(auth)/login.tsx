@@ -92,14 +92,31 @@ export default function LoginScreen() {
       stickyFooter={
         <View className="space-y-3 gap-2">
           {step === 'email' ? (
-            <Button
-              loading={isSubmitting}
-              onPress={handleSendOtp}
-              accessibilityLabel="Send passcode"
-              rightIcon={<ArrowRight size={18} strokeWidth={1.75} color="#FFFFFF" />}
-            >
-              Send passcode
-            </Button>
+            <>
+              <Button
+                loading={isSubmitting}
+                onPress={handleSendOtp}
+                accessibilityLabel="Send passcode"
+                rightIcon={<ArrowRight size={18} strokeWidth={1.75} color="#FFFFFF" />}
+              >
+                Send passcode
+              </Button>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Already have a passcode"
+                onPress={() => {
+                  setErrorMessage(null);
+                  setStep('otp');
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                className="py-2 items-center justify-center min-h-[44px]"
+              >
+                <Text variant="caption" color="muted">
+                  Already received a passcode? Enter code
+                </Text>
+              </Pressable>
+            </>
           ) : (
             <>
               <Button
