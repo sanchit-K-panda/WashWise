@@ -5,6 +5,8 @@ import { supabase } from '@/services/supabase';
 import {
   requestOtp as serviceRequestOtp,
   verifyOtp as serviceVerifyOtp,
+  signInWithPassword as serviceSignInWithPassword,
+  signUpWithPassword as serviceSignUpWithPassword,
   fetchOrCreateProfile,
   signOut as serviceSignOut,
   getCurrentSession,
@@ -20,6 +22,15 @@ export interface AuthContextType {
   error: string | null;
   signInWithOtp: (email: string) => Promise<{ success: boolean; error?: string }>;
   verifyOtp: (email: string, token: string) => Promise<{ success: boolean; error?: string }>;
+  signInWithPassword: (
+    identifier: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  signUpWithPassword: (
+    name: string,
+    email: string,
+    password: string
+  ) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -156,6 +167,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true };
   }, []);
 
+  const signInWithPassword = useCallback(async (identifier: string, password: string) => {
+    setError(null);
+    const result = await serviceSignInWithPassword(identifier, password);
+    if (result.error) {
+      setError(result.error);
+      return { success: false, error: result.error };
+    }
+    setSession(result.session);
+    setUser(result.user);
+    setProfile(result.profile);
+    return { success: true };
+  }, []);
+
+  const signUpWithPassword = useCallback(async (name: string, email: string, password: string) => {
+    setError(null);
+    const result = await serviceSignUpWithPassword(name, email, password);
+    if (result.error) {
+      setError(result.error);
+      return { success: false, error: result.error };
+    }
+    setSession(result.session);
+    setUser(result.user);
+    setProfile(result.profile);
+    return { success: true };
+  }, []);
+
   const signOut = useCallback(async () => {
     setError(null);
     await serviceSignOut();
@@ -182,10 +219,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       error,
       signInWithOtp,
       verifyOtp,
+      signInWithPassword,
+      signUpWithPassword,
       signOut,
       refreshProfile,
     }),
-    [session, user, profile, isLoading, error, signInWithOtp, verifyOtp, signOut, refreshProfile]
+    [
+      session,
+      user,
+      profile,
+      isLoading,
+      error,
+      signInWithOtp,
+      verifyOtp,
+      signInWithPassword,
+      signUpWithPassword,
+      signOut,
+      refreshProfile,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

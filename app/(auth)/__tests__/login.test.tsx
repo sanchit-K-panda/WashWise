@@ -8,14 +8,14 @@ jest.mock('@/hooks/useAuth', () => ({
 }));
 
 describe('LoginScreen', () => {
-  const mockSignInWithOtp = jest.fn();
-  const mockVerifyOtp = jest.fn();
+  const mockSignInWithPassword = jest.fn();
+  const mockSignUpWithPassword = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
     (useAuth as jest.Mock).mockReturnValue({
-      signInWithOtp: mockSignInWithOtp,
-      verifyOtp: mockVerifyOtp,
+      signInWithPassword: mockSignInWithPassword,
+      signUpWithPassword: mockSignUpWithPassword,
       user: null,
       profile: null,
       isLoading: false,
@@ -23,81 +23,108 @@ describe('LoginScreen', () => {
     });
   });
 
-  it('renders initial email step per DESIGN.md', async () => {
-    const { getByText, getByTestId, getByLabelText } = await render(<LoginScreen />);
+  it('renders student sign in form by default per DESIGN.md', async () => {
+    const { getAllByText, getByTestId, getByLabelText } = await render(<LoginScreen />);
 
-    expect(getByText('Sign in')).toBeTruthy();
+    expect(getAllByText('Sign in').length).toBeGreaterThan(0);
     expect(getByTestId('email-input')).toBeTruthy();
-    expect(getByLabelText('Send passcode')).toBeTruthy();
+    expect(getByTestId('password-input')).toBeTruthy();
+    expect(getByLabelText('Sign in')).toBeTruthy();
   });
 
-  it('shows error if email format is invalid', async () => {
+  it('validates email format before submitting student sign in', async () => {
     const { getByTestId, getByLabelText, getByText } = await render(<LoginScreen />);
 
     await act(async () => {
       fireEvent.changeText(getByTestId('email-input'), 'invalid-email');
+      fireEvent.changeText(getByTestId('password-input'), 'password123');
     });
 
     await act(async () => {
-      fireEvent.press(getByLabelText('Send passcode'));
+      fireEvent.press(getByLabelText('Sign in'));
     });
 
     await waitFor(() => {
       expect(getByText(/Please enter a valid email address/)).toBeTruthy();
     });
-    expect(mockSignInWithOtp).not.toHaveBeenCalled();
+    expect(mockSignInWithPassword).not.toHaveBeenCalled();
   });
 
-  it('transitions to OTP step upon successful passcode request with any valid email', async () => {
-    mockSignInWithOtp.mockResolvedValueOnce({ success: true });
-
-    const { getByTestId, getByLabelText, getByText } = await render(<LoginScreen />);
-
-    await act(async () => {
-      fireEvent.changeText(getByTestId('email-input'), 'student@gmail.com');
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('Send passcode'));
-    });
-
-    await waitFor(() => {
-      expect(mockSignInWithOtp).toHaveBeenCalledWith('student@gmail.com');
-      expect(getByText('6-digit passcode')).toBeTruthy();
-      expect(getByTestId('otp-input')).toBeTruthy();
-    });
-  });
-
-  it('submits 6-digit passcode and verifies', async () => {
-    mockSignInWithOtp.mockResolvedValueOnce({ success: true });
-    mockVerifyOtp.mockResolvedValueOnce({ success: true });
+  it('submits student sign in with email and password', async () => {
+    mockSignInWithPassword.mockResolvedValueOnce({ success: true });
 
     const { getByTestId, getByLabelText } = await render(<LoginScreen />);
 
-    // Step 1: Send OTP
     await act(async () => {
-      fireEvent.changeText(getByTestId('email-input'), 'student@college.edu');
+      fireEvent.changeText(getByTestId('email-input'), 'student@gmail.com');
+      fireEvent.changeText(getByTestId('password-input'), 'secret123');
     });
 
     await act(async () => {
-      fireEvent.press(getByLabelText('Send passcode'));
-    });
-
-    // Step 2: Verify OTP
-    await waitFor(() => {
-      expect(getByTestId('otp-input')).toBeTruthy();
-    });
-
-    await act(async () => {
-      fireEvent.changeText(getByTestId('otp-input'), '654321');
-    });
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('Verify passcode'));
+      fireEvent.press(getByLabelText('Sign in'));
     });
 
     await waitFor(() => {
-      expect(mockVerifyOtp).toHaveBeenCalledWith('student@college.edu', '654321');
+      expect(mockSignInWithPassword).toHaveBeenCalledWith('student@gmail.com', 'secret123');
+    });
+  });
+
+  it('switches to register mode and registers a new student', async () => {
+    mockSignUpWithPassword.mockResolvedValueOnce({ success: true });
+
+    const { getByTestId, getByLabelText } = await render(<LoginScreen />);
+
+    // Switch to register mode
+    await act(async () => {
+      fireEvent.press(getByLabelText('Switch to registration'));
+    });
+
+    await waitFor(() => {
+      expect(getByTestId('name-input')).toBeTruthy();
+      expect(getByLabelText('Create account')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.changeText(getByTestId('name-input'), 'Rahul Sharma');
+      fireEvent.changeText(getByTestId('email-input'), 'rahul@gmail.com');
+      fireEvent.changeText(getByTestId('password-input'), 'rahul123');
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('Create account'));
+    });
+
+    await waitFor(() => {
+      expect(mockSignUpWithPassword).toHaveBeenCalledWith(
+        'Rahul Sharma',
+        'rahul@gmail.com',
+        'rahul123'
+      );
+    });
+  });
+
+  it('switches to caretaker tab and signs in with caretaker credentials', async () => {
+    mockSignInWithPassword.mockResolvedValueOnce({ success: true });
+
+    const { getByTestId, getByLabelText, getByText } = await render(<LoginScreen />);
+
+    // Switch to Caretaker tab
+    await act(async () => {
+      fireEvent.press(getByLabelText('Caretaker role tab'));
+    });
+
+    await waitFor(() => {
+      expect(getByText('Caretaker Portal')).toBeTruthy();
+      expect(getByTestId('caretaker-username-input')).toBeTruthy();
+      expect(getByTestId('caretaker-password-input')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('Sign in as Caretaker'));
+    });
+
+    await waitFor(() => {
+      expect(mockSignInWithPassword).toHaveBeenCalledWith('username_1', 'caretaker123');
     });
   });
 });

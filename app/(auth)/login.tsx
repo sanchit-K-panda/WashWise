@@ -1,164 +1,237 @@
 import { useState } from 'react';
 import { View, TextInput, Pressable } from 'react-native';
-import { Mail, ArrowRight, AlertCircle, KeyRound } from 'lucide-react-native';
+import {
+  Mail,
+  Lock,
+  User,
+  Shield,
+  ArrowRight,
+  AlertCircle,
+  CheckCircle2,
+} from 'lucide-react-native';
 import { colors } from '@/theme/tokens';
 import { Screen, Text, Button } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
-import { validateCollegeEmail, ALLOWED_EMAIL_DOMAIN } from '@/services/auth';
+
+type RoleTab = 'student' | 'caretaker';
+type StudentMode = 'signin' | 'register';
 
 export default function LoginScreen() {
-  const { signInWithOtp, verifyOtp } = useAuth();
+  const { signInWithPassword, signUpWithPassword } = useAuth();
 
+  const [activeTab, setActiveTab] = useState<RoleTab>('student');
+  const [studentMode, setStudentMode] = useState<StudentMode>('signin');
+
+  // Form fields
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [step, setStep] = useState<'email' | 'otp'>('email');
-  const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Caretaker form fields
+  const [caretakerUsername, setCaretakerUsername] = useState('username_1');
+  const [caretakerPassword, setCaretakerPassword] = useState('caretaker123');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const handleSendOtp = async () => {
+  const handleStudentSubmit = async () => {
     setErrorMessage(null);
-    setResendStatus(null);
+    setSuccessMessage(null);
 
-    const validation = validateCollegeEmail(email);
-    if (!validation.isValid) {
-      setErrorMessage(validation.error || 'Please enter a valid email address');
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail) {
+      setErrorMessage('Please enter your email address');
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const result = await signInWithOtp(email.trim());
-      if (result.success) {
-        setStep('otp');
-      } else {
-        setErrorMessage(result.error || 'Failed to send passcode. Please try again.');
+    if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+      setErrorMessage('Please enter a valid email address');
+      return;
+    }
+
+    if (trimmedPassword.length < 6) {
+      setErrorMessage('Password must be at least 6 characters');
+      return;
+    }
+
+    if (studentMode === 'register') {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        setErrorMessage('Please enter your full name');
+        return;
       }
-    } finally {
-      setIsSubmitting(false);
+
+      setIsSubmitting(true);
+      try {
+        const result = await signUpWithPassword(trimmedName, trimmedEmail, trimmedPassword);
+        if (!result.success) {
+          setErrorMessage(result.error || 'Registration failed. Please try again.');
+        } else {
+          setSuccessMessage('Account created successfully!');
+        }
+      } finally {
+        setIsSubmitting(false);
+      }
+    } else {
+      setIsSubmitting(true);
+      try {
+        const result = await signInWithPassword(trimmedEmail, trimmedPassword);
+        if (!result.success) {
+          setErrorMessage(result.error || 'Invalid email or password. Please try again.');
+        }
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
-  const handleVerifyOtp = async () => {
+  const handleCaretakerSubmit = async () => {
     setErrorMessage(null);
+    setSuccessMessage(null);
 
-    if (otp.trim().length !== 6) {
-      setErrorMessage('Please enter the complete 6-digit passcode');
+    const trimmedUsername = caretakerUsername.trim();
+    const trimmedPass = caretakerPassword.trim();
+
+    if (!trimmedUsername) {
+      setErrorMessage('Please enter caretaker username');
+      return;
+    }
+
+    if (!trimmedPass) {
+      setErrorMessage('Please enter caretaker password');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await verifyOtp(email.trim(), otp.trim());
+      const result = await signInWithPassword(trimmedUsername, trimmedPass);
       if (!result.success) {
-        setErrorMessage(result.error || 'Invalid or expired passcode. Please try again.');
+        setErrorMessage(result.error || 'Invalid caretaker credentials');
       }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleResend = async () => {
+  const fillCaretakerDemo = () => {
+    setCaretakerUsername('username_1');
+    setCaretakerPassword('caretaker123');
     setErrorMessage(null);
-    setIsSubmitting(true);
-    try {
-      const result = await signInWithOtp(email.trim());
-      if (result.success) {
-        setResendStatus('A new passcode has been sent to your email.');
-      } else {
-        setErrorMessage(result.error || 'Failed to resend passcode');
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleChangeEmail = () => {
-    setStep('email');
-    setOtp('');
-    setErrorMessage(null);
-    setResendStatus(null);
   };
 
   return (
     <Screen
       header={{
-        title: 'Sign in',
+        title:
+          activeTab === 'student'
+            ? studentMode === 'signin'
+              ? 'Sign in'
+              : 'Register'
+            : 'Caretaker Portal',
         subtitle:
-          step === 'email'
-            ? 'Enter your email address to access hostel laundry.'
-            : `Enter the 6-digit passcode sent to ${email}.`,
+          activeTab === 'student'
+            ? studentMode === 'signin'
+              ? 'Enter your email and password to access hostel laundry.'
+              : 'Create an account with your name, email, and password.'
+            : 'Hostel machine maintenance and verification access.',
       }}
       stickyFooter={
         <View className="space-y-3 gap-2">
-          {step === 'email' ? (
+          {activeTab === 'student' ? (
             <>
               <Button
                 loading={isSubmitting}
-                onPress={handleSendOtp}
-                accessibilityLabel="Send passcode"
+                onPress={handleStudentSubmit}
+                accessibilityLabel={studentMode === 'signin' ? 'Sign in' : 'Create account'}
                 rightIcon={<ArrowRight size={18} strokeWidth={1.75} color="#FFFFFF" />}
               >
-                Send passcode
+                {studentMode === 'signin' ? 'Sign in' : 'Create account'}
               </Button>
 
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Already have a passcode"
+                accessibilityLabel={
+                  studentMode === 'signin' ? 'Switch to registration' : 'Switch to sign in'
+                }
                 onPress={() => {
                   setErrorMessage(null);
-                  setStep('otp');
+                  setSuccessMessage(null);
+                  setStudentMode(studentMode === 'signin' ? 'register' : 'signin');
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 className="py-2 items-center justify-center min-h-[44px]"
               >
                 <Text variant="caption" color="muted">
-                  Already received a passcode? Enter code
+                  {studentMode === 'signin'
+                    ? "Don't have an account? Register"
+                    : 'Already have an account? Sign in'}
                 </Text>
               </Pressable>
             </>
           ) : (
-            <>
-              <Button
-                loading={isSubmitting}
-                onPress={handleVerifyOtp}
-                accessibilityLabel="Verify passcode"
-              >
-                Verify passcode
-              </Button>
-
-              <View className="flex-row items-center justify-between mt-1">
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Change email address"
-                  onPress={handleChangeEmail}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  className="py-3 px-1 min-h-[48px] justify-center active:opacity-70"
-                >
-                  <Text variant="caption" color="accent">
-                    Change email
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Resend passcode"
-                  disabled={isSubmitting}
-                  onPress={handleResend}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  className="py-3 px-1 min-h-[48px] justify-center active:opacity-70"
-                >
-                  <Text variant="caption" color="muted">
-                    Resend code
-                  </Text>
-                </Pressable>
-              </View>
-            </>
+            <Button
+              loading={isSubmitting}
+              onPress={handleCaretakerSubmit}
+              accessibilityLabel="Sign in as Caretaker"
+              rightIcon={<ArrowRight size={18} strokeWidth={1.75} color="#FFFFFF" />}
+            >
+              Sign in as Caretaker
+            </Button>
           )}
         </View>
       }
     >
-      {/* Calm Error Alert (Anti-slop, left-aligned) */}
+      {/* Role Selection Tabs (Anti-slop, clean tabs) */}
+      <View className="flex-row bg-surface p-1 rounded-input border border-hairline mb-5">
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'student' }}
+          accessibilityLabel="Student role tab"
+          onPress={() => {
+            setActiveTab('student');
+            setErrorMessage(null);
+            setSuccessMessage(null);
+          }}
+          className={`flex-1 py-2.5 items-center justify-center rounded-md ${
+            activeTab === 'student' ? 'bg-bg border border-hairline' : ''
+          }`}
+        >
+          <Text
+            variant="caption"
+            color={activeTab === 'student' ? 'ink' : 'muted'}
+            style={{ fontWeight: activeTab === 'student' ? '600' : '400' }}
+          >
+            Student
+          </Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'caretaker' }}
+          accessibilityLabel="Caretaker role tab"
+          onPress={() => {
+            setActiveTab('caretaker');
+            setErrorMessage(null);
+            setSuccessMessage(null);
+          }}
+          className={`flex-1 py-2.5 items-center justify-center rounded-md ${
+            activeTab === 'caretaker' ? 'bg-bg border border-hairline' : ''
+          }`}
+        >
+          <Text
+            variant="caption"
+            color={activeTab === 'caretaker' ? 'ink' : 'muted'}
+            style={{ fontWeight: activeTab === 'caretaker' ? '600' : '400' }}
+          >
+            Caretaker
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Error Alert */}
       {errorMessage && (
         <View
           accessibilityRole="alert"
@@ -172,73 +245,166 @@ export default function LoginScreen() {
         </View>
       )}
 
-      {/* Resend status banner */}
-      {resendStatus && (
+      {/* Success Alert */}
+      {successMessage && (
         <View
-          accessibilityRole="text"
-          className="flex-row items-center gap-2.5 p-3 bg-surface border border-hairline rounded-md mb-4"
+          accessibilityRole="alert"
+          accessibilityLabel={successMessage}
+          className="flex-row items-center gap-2.5 p-3.5 bg-surface border border-status-available rounded-md mb-4"
         >
-          <Text variant="caption" color="available">
-            {resendStatus}
+          <CheckCircle2 size={18} strokeWidth={1.75} color={colors.status.available} />
+          <Text variant="caption" color="available" style={{ flex: 1 }}>
+            {successMessage}
           </Text>
         </View>
       )}
 
-      {step === 'email' ? (
-        <View className="mt-2">
-          <Text variant="caption" style={{ marginBottom: 8 }}>
-            Email address
-          </Text>
-          <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
-            <Mail size={20} strokeWidth={1.75} color={colors.ink.muted} />
-            <TextInput
-              testID="email-input"
-              accessibilityLabel="Email address"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder={
-                ALLOWED_EMAIL_DOMAIN && ALLOWED_EMAIL_DOMAIN !== '*'
-                  ? `student@${ALLOWED_EMAIL_DOMAIN}`
-                  : 'name@example.com'
-              }
-              placeholderTextColor={colors.ink.muted}
-              className="flex-1 font-sans text-ink text-[15px] ml-2"
-              editable={!isSubmitting}
-              onSubmitEditing={handleSendOtp}
-            />
+      {activeTab === 'student' ? (
+        <View className="space-y-4 gap-4 mt-1">
+          {studentMode === 'register' && (
+            <View>
+              <Text variant="caption" style={{ marginBottom: 6 }}>
+                Full Name
+              </Text>
+              <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
+                <User size={18} strokeWidth={1.75} color={colors.ink.muted} />
+                <TextInput
+                  testID="name-input"
+                  accessibilityLabel="Full name"
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  placeholder="e.g. John Doe"
+                  placeholderTextColor={colors.ink.muted}
+                  className="flex-1 font-sans text-ink text-[15px] ml-2"
+                  editable={!isSubmitting}
+                />
+              </View>
+            </View>
+          )}
+
+          <View>
+            <Text variant="caption" style={{ marginBottom: 6 }}>
+              Email address
+            </Text>
+            <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
+              <Mail size={18} strokeWidth={1.75} color={colors.ink.muted} />
+              <TextInput
+                testID="email-input"
+                accessibilityLabel="Email address"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="name@example.com"
+                placeholderTextColor={colors.ink.muted}
+                className="flex-1 font-sans text-ink text-[15px] ml-2"
+                editable={!isSubmitting}
+              />
+            </View>
           </View>
-          <Text variant="caption" color="muted" style={{ marginTop: 6 }}>
-            Passcode will be delivered directly to your inbox.
-          </Text>
+
+          <View>
+            <Text variant="caption" style={{ marginBottom: 6 }}>
+              Password
+            </Text>
+            <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
+              <Lock size={18} strokeWidth={1.75} color={colors.ink.muted} />
+              <TextInput
+                testID="password-input"
+                accessibilityLabel="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                placeholder="••••••••"
+                placeholderTextColor={colors.ink.muted}
+                className="flex-1 font-sans text-ink text-[15px] ml-2"
+                editable={!isSubmitting}
+                onSubmitEditing={handleStudentSubmit}
+              />
+            </View>
+            <Text variant="caption" color="muted" style={{ marginTop: 4 }}>
+              Must be at least 6 characters.
+            </Text>
+          </View>
         </View>
       ) : (
-        <View className="mt-2">
-          <Text variant="caption" style={{ marginBottom: 8 }}>
-            6-digit passcode
-          </Text>
-          <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
-            <KeyRound size={20} strokeWidth={1.75} color={colors.ink.muted} />
-            <TextInput
-              testID="otp-input"
-              accessibilityLabel="6-digit passcode"
-              value={otp}
-              onChangeText={setOtp}
-              keyboardType="number-pad"
-              maxLength={6}
-              placeholder="000000"
-              placeholderTextColor={colors.ink.muted}
-              className="flex-1 font-mono-semibold text-ink text-[20px] tracking-widest text-center"
-              editable={!isSubmitting}
-              onSubmitEditing={handleVerifyOtp}
-              autoFocus
-            />
+        <View className="space-y-4 gap-4 mt-1">
+          {/* Caretaker Info Card */}
+          <View className="p-3.5 bg-surface border border-hairline rounded-input">
+            <View className="flex-row items-center justify-between mb-1">
+              <View className="flex-row items-center gap-1.5">
+                <Shield size={16} strokeWidth={1.75} color={colors.sky[700]} />
+                <Text variant="caption" color="ink" style={{ fontWeight: '600' }}>
+                  Caretaker Credentials
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Autofill caretaker credentials"
+                onPress={fillCaretakerDemo}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text variant="caption" color="accent" style={{ fontWeight: '600' }}>
+                  Autofill
+                </Text>
+              </Pressable>
+            </View>
+            <Text variant="caption" color="muted">
+              Username:{' '}
+              <Text variant="caption" color="ink" style={{ fontWeight: '600' }}>
+                username_1
+              </Text>
+              {'\n'}Password:{' '}
+              <Text variant="caption" color="ink" style={{ fontWeight: '600' }}>
+                caretaker123
+              </Text>
+            </Text>
           </View>
-          <Text variant="caption" color="muted" style={{ marginTop: 6 }}>
-            Check your spam folder if passcode does not appear within 60 seconds.
-          </Text>
+
+          <View>
+            <Text variant="caption" style={{ marginBottom: 6 }}>
+              Caretaker Username
+            </Text>
+            <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
+              <User size={18} strokeWidth={1.75} color={colors.ink.muted} />
+              <TextInput
+                testID="caretaker-username-input"
+                accessibilityLabel="Caretaker Username"
+                value={caretakerUsername}
+                onChangeText={setCaretakerUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="username_1"
+                placeholderTextColor={colors.ink.muted}
+                className="flex-1 font-sans text-ink text-[15px] ml-2"
+                editable={!isSubmitting}
+              />
+            </View>
+          </View>
+
+          <View>
+            <Text variant="caption" style={{ marginBottom: 6 }}>
+              Password
+            </Text>
+            <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
+              <Lock size={18} strokeWidth={1.75} color={colors.ink.muted} />
+              <TextInput
+                testID="caretaker-password-input"
+                accessibilityLabel="Caretaker Password"
+                value={caretakerPassword}
+                onChangeText={setCaretakerPassword}
+                secureTextEntry
+                placeholder="caretaker123"
+                placeholderTextColor={colors.ink.muted}
+                className="flex-1 font-sans text-ink text-[15px] ml-2"
+                editable={!isSubmitting}
+                onSubmitEditing={handleCaretakerSubmit}
+              />
+            </View>
+          </View>
         </View>
       )}
     </Screen>

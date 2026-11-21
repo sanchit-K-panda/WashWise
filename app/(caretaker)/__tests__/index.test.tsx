@@ -100,6 +100,8 @@ describe('CaretakerHomeScreen', () => {
       error: null,
       signInWithOtp: jest.fn(),
       verifyOtp: jest.fn(),
+      signInWithPassword: jest.fn(),
+      signUpWithPassword: jest.fn(),
       signOut: mockSignOut,
       refreshProfile: jest.fn(),
     });

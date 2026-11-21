@@ -2,6 +2,8 @@ import {
   validateCollegeEmail,
   requestOtp,
   verifyOtp,
+  signInWithPassword,
+  signUpWithPassword,
   fetchOrCreateProfile,
   signOut,
   getCurrentSession,
@@ -13,6 +15,8 @@ jest.mock('../supabase', () => ({
     auth: {
       signInWithOtp: jest.fn(),
       verifyOtp: jest.fn(),
+      signInWithPassword: jest.fn(),
+      signUp: jest.fn(),
       signOut: jest.fn(),
       getSession: jest.fn(),
       onAuthStateChange: jest.fn(() => ({
@@ -121,6 +125,103 @@ describe('Auth Service', () => {
     });
   });
 
+  describe('signInWithPassword', () => {
+    it('authenticates caretaker instantly with username_1 / caretaker123', async () => {
+      const result = await signInWithPassword('username_1', 'caretaker123');
+      expect(result.error).toBeUndefined();
+      expect(result.profile?.role).toBe('caretaker');
+      expect(result.profile?.name).toBe('Hostel Caretaker');
+      expect(result.session).toBeTruthy();
+    });
+
+    it('rejects wrong caretaker password', async () => {
+      const result = await signInWithPassword('username_1', 'wrongpass');
+      expect(result.error).toBe('Invalid caretaker password');
+      expect(result.session).toBeNull();
+    });
+
+    it('validates student email and password length', async () => {
+      const res1 = await signInWithPassword('invalid-email', '123456');
+      expect(res1.error).toContain('valid email address');
+
+      const res2 = await signInWithPassword('student@college.edu', '123');
+      expect(res2.error).toContain('at least 6 characters');
+    });
+
+    it('authenticates student via Supabase', async () => {
+      const mockUser = { id: 's1', email: 'student@college.edu', user_metadata: {} };
+      const mockSession = { access_token: 'token123', user: mockUser };
+      const mockProfile = {
+        id: 's1',
+        name: 'student',
+        role: 'student',
+        hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
+        created_at: '',
+        updated_at: '',
+      };
+
+      (supabase.auth.signInWithPassword as jest.Mock).mockResolvedValueOnce({
+        data: { session: mockSession, user: mockUser },
+        error: null,
+      });
+
+      (supabase.from as jest.Mock).mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValueOnce({ data: mockProfile, error: null }),
+      });
+
+      const result = await signInWithPassword('student@college.edu', 'password123');
+      expect(result.error).toBeUndefined();
+      expect(result.profile?.role).toBe('student');
+    });
+  });
+
+  describe('signUpWithPassword', () => {
+    it('validates name, email, and password length', async () => {
+      const res1 = await signUpWithPassword('', 'student@college.edu', '123456');
+      expect(res1.error).toContain('enter your name');
+
+      const res2 = await signUpWithPassword('John', 'invalid', '123456');
+      expect(res2.error).toContain('valid email address');
+
+      const res3 = await signUpWithPassword('John', 'student@college.edu', '123');
+      expect(res3.error).toContain('at least 6 characters');
+    });
+
+    it('registers new student via Supabase', async () => {
+      const mockUser = {
+        id: 's2',
+        email: 'new@college.edu',
+        user_metadata: { full_name: 'New Student' },
+      };
+      const mockSession = { access_token: 'token456', user: mockUser };
+      const mockProfile = {
+        id: 's2',
+        name: 'New Student',
+        role: 'student',
+        hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
+        created_at: '',
+        updated_at: '',
+      };
+
+      (supabase.auth.signUp as jest.Mock).mockResolvedValueOnce({
+        data: { session: mockSession, user: mockUser },
+        error: null,
+      });
+
+      (supabase.from as jest.Mock).mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValueOnce({ data: mockProfile, error: null }),
+      });
+
+      const result = await signUpWithPassword('New Student', 'new@college.edu', 'secure123');
+      expect(result.error).toBeUndefined();
+      expect(result.profile?.name).toBe('New Student');
+    });
+  });
+
   describe('fetchOrCreateProfile', () => {
     it('creates default student profile if user does not exist in DB', async () => {
       const mockUser = { id: 'u2', email: 'newstudent@college.edu', user_metadata: {} };
@@ -128,7 +229,7 @@ describe('Auth Service', () => {
         id: 'u2',
         name: 'newstudent',
         role: 'student',
-        hostel_block_id: null,
+        hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
         created_at: '',
         updated_at: '',
       };

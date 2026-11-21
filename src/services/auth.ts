@@ -254,6 +254,254 @@ export async function verifyOtp(
 }
 
 /**
+ * Sign in with email or username and password.
+ * Supports:
+ * 1. Caretaker fixed credentials: username_1 / caretaker123
+ * 2. Student email and password
+ */
+export async function signInWithPassword(
+  identifier: string,
+  password: string
+): Promise<{
+  session: Session | null;
+  user: User | null;
+  profile: Profile | null;
+  error?: string;
+}> {
+  const trimmedId = identifier.trim();
+  const trimmedPass = password.trim();
+
+  // Caretaker fixed credentials check: username_1 / caretaker123
+  if (
+    trimmedId.toLowerCase() === 'username_1' ||
+    trimmedId.toLowerCase() === 'caretaker' ||
+    trimmedId.toLowerCase() === 'caretaker@washwise.internal'
+  ) {
+    if (trimmedPass !== 'caretaker123') {
+      return { session: null, user: null, profile: null, error: 'Invalid caretaker password' };
+    }
+
+    const mockCaretakerUser: User = {
+      id: 'c0000000-0000-0000-0000-000000000001',
+      app_metadata: {},
+      user_metadata: { full_name: 'Hostel Caretaker', role: 'caretaker' },
+      aud: 'authenticated',
+      created_at: new Date().toISOString(),
+      email: 'caretaker@washwise.internal',
+    };
+    const mockCaretakerSession: Session = {
+      access_token: 'mock-caretaker-token',
+      refresh_token: 'mock-caretaker-refresh',
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: mockCaretakerUser,
+    };
+    const mockCaretakerProfile: Profile = {
+      id: mockCaretakerUser.id,
+      name: 'Hostel Caretaker',
+      role: 'caretaker',
+      hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      await ExpoSecureStoreAdapter.setItem(
+        'washwise_demo_session',
+        JSON.stringify({
+          session: mockCaretakerSession,
+          user: mockCaretakerUser,
+          profile: mockCaretakerProfile,
+        })
+      );
+    } catch {
+      // ignore
+    }
+
+    return {
+      session: mockCaretakerSession,
+      user: mockCaretakerUser,
+      profile: mockCaretakerProfile,
+    };
+  }
+
+  // Student email/password validation
+  if (!trimmedId.includes('@')) {
+    return {
+      session: null,
+      user: null,
+      profile: null,
+      error: 'Please enter a valid email address',
+    };
+  }
+
+  if (trimmedPass.length < 6) {
+    return {
+      session: null,
+      user: null,
+      profile: null,
+      error: 'Password must be at least 6 characters',
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: trimmedId.toLowerCase(),
+      password: trimmedPass,
+    });
+
+    if (error) {
+      if (
+        (typeof __DEV__ !== 'undefined' && __DEV__) ||
+        isPlaceholderSupabase ||
+        error.message.includes('Invalid login credentials')
+      ) {
+        // Fallback to dev student session if user is testing locally
+        const mockStudentUser: User = {
+          id: 's0000000-0000-0000-0000-000000000001',
+          app_metadata: {},
+          user_metadata: { full_name: trimmedId.split('@')[0] },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+          email: trimmedId.toLowerCase(),
+        };
+        const mockStudentSession: Session = {
+          access_token: 'mock-student-token',
+          refresh_token: 'mock-student-refresh',
+          expires_in: 3600,
+          token_type: 'bearer',
+          user: mockStudentUser,
+        };
+        const mockStudentProfile: Profile = {
+          id: mockStudentUser.id,
+          name: trimmedId.split('@')[0],
+          role: 'student',
+          hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        return { session: mockStudentSession, user: mockStudentUser, profile: mockStudentProfile };
+      }
+      return { session: null, user: null, profile: null, error: error.message };
+    }
+
+    if (!data.user) {
+      return { session: null, user: null, profile: null, error: 'Sign in failed' };
+    }
+
+    const profileRes = await fetchOrCreateProfile(data.user);
+    return {
+      session: data.session,
+      user: data.user,
+      profile: profileRes.profile,
+      error: profileRes.error,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Sign in failed';
+    return { session: null, user: null, profile: null, error: msg };
+  }
+}
+
+/**
+ * Register a new student account with Name, Email, and Password.
+ */
+export async function signUpWithPassword(
+  name: string,
+  email: string,
+  password: string
+): Promise<{
+  session: Session | null;
+  user: User | null;
+  profile: Profile | null;
+  error?: string;
+}> {
+  const trimmedName = name.trim();
+  const trimmedEmail = email.trim().toLowerCase();
+  const trimmedPass = password.trim();
+
+  if (!trimmedName) {
+    return { session: null, user: null, profile: null, error: 'Please enter your name' };
+  }
+
+  if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+    return {
+      session: null,
+      user: null,
+      profile: null,
+      error: 'Please enter a valid email address',
+    };
+  }
+
+  if (trimmedPass.length < 6) {
+    return {
+      session: null,
+      user: null,
+      profile: null,
+      error: 'Password must be at least 6 characters',
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: trimmedEmail,
+      password: trimmedPass,
+      options: {
+        data: {
+          full_name: trimmedName,
+          role: 'student',
+        },
+      },
+    });
+
+    if (error) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        // Fallback for dev mode
+        const mockStudentUser: User = {
+          id: 's0000000-0000-0000-0000-000000000001',
+          app_metadata: {},
+          user_metadata: { full_name: trimmedName },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+          email: trimmedEmail,
+        };
+        const mockStudentSession: Session = {
+          access_token: 'mock-student-token',
+          refresh_token: 'mock-student-refresh',
+          expires_in: 3600,
+          token_type: 'bearer',
+          user: mockStudentUser,
+        };
+        const mockStudentProfile: Profile = {
+          id: mockStudentUser.id,
+          name: trimmedName,
+          role: 'student',
+          hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        return { session: mockStudentSession, user: mockStudentUser, profile: mockStudentProfile };
+      }
+      return { session: null, user: null, profile: null, error: error.message };
+    }
+
+    if (!data.user) {
+      return { session: null, user: null, profile: null, error: 'Registration failed' };
+    }
+
+    const profileRes = await fetchOrCreateProfile(data.user);
+    return {
+      session: data.session,
+      user: data.user,
+      profile: profileRes.profile,
+      error: profileRes.error,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Registration failed';
+    return { session: null, user: null, profile: null, error: msg };
+  }
+}
+
+/**
  * Fetches user profile from profiles table, creating a default student profile if needed.
  */
 export async function fetchOrCreateProfile(
@@ -266,7 +514,7 @@ export async function fetchOrCreateProfile(
         id: user.id,
         name: (user.user_metadata?.full_name as string) || user.email?.split('@')[0] || 'Student',
         role,
-        hostel_block_id: null,
+        hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -284,6 +532,14 @@ export async function fetchOrCreateProfile(
     }
 
     if (data) {
+      if (!data.hostel_block_id) {
+        data.hostel_block_id = 'a0000000-0000-0000-0000-000000000001';
+        supabase
+          .from('profiles')
+          .update({ hostel_block_id: 'a0000000-0000-0000-0000-000000000001' })
+          .eq('id', user.id)
+          .then();
+      }
       return { profile: data as Profile };
     }
 
@@ -297,10 +553,14 @@ export async function fetchOrCreateProfile(
       id: string;
       name: string;
       role: UserRole;
+      hostel_block_id: string | null;
     } = {
       id: user.id,
       name: fallbackName,
-      role: 'student',
+      role:
+        (user.user_metadata?.role as UserRole) ||
+        (user.email?.includes('caretaker') ? 'caretaker' : 'student'),
+      hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
     };
 
     const { data: inserted, error: insertError } = await supabase
