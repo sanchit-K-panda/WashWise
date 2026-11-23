@@ -5,7 +5,7 @@ import { colors, typography } from '@/theme/tokens';
 import { glassCard } from '@/theme/glass';
 import { Screen, Text, Skeleton, ErrorBanner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
-import { useMachines } from '@/hooks/useMachines';
+import { useHostelBlock } from '@/hooks/useMachines';
 import { fetchUserHistory, WashSessionDetails } from '@/services/wash';
 
 function formatSessionDate(dateStr: string): string {
@@ -57,7 +57,7 @@ function formatDuration(minutes: number): string {
 
 export default function HistoryScreen() {
   const { user, profile } = useAuth();
-  const { block } = useMachines(profile?.hostel_block_id);
+  const { block } = useHostelBlock(profile?.hostel_block_id);
   const blockName = block?.name || 'Block A';
 
   const {

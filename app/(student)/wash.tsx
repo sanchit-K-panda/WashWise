@@ -8,7 +8,7 @@ import { glassCard, glassPanel, btnPrimary, btnGhost } from '@/theme/glass';
 import { Screen, Text, Button, ProgressRing, Skeleton } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
 import { useActiveSession } from '@/hooks/useActiveSession';
-import { useMachines } from '@/hooks/useMachines';
+import { useHostelBlock } from '@/hooks/useMachines';
 import { endWash, reportMachineIssue } from '@/services/wash';
 
 export default function MyWashScreen() {
@@ -16,7 +16,7 @@ export default function MyWashScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { activeSession, isLoading } = useActiveSession();
-  const { block } = useMachines(profile?.hostel_block_id);
+  const { block } = useHostelBlock(profile?.hostel_block_id);
   const blockName = block?.name || 'Block A';
 
   // Countdown timer state

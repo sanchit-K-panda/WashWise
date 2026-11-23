@@ -28,6 +28,24 @@ export interface UseMachinesResult {
   refetch: () => Promise<void>;
 }
 
+export function useHostelBlock(blockIdInput?: string | null) {
+  const query = useQuery({
+    queryKey: ['hostel_block', blockIdInput ?? 'first'],
+    queryFn: async () => {
+      if (blockIdInput) {
+        return fetchHostelBlock(blockIdInput);
+      }
+      return fetchFirstBlock();
+    },
+    staleTime: 1000 * 60 * 30, // 30 minutes cache for hostel block metadata
+  });
+
+  return {
+    block: query.data || null,
+    isLoading: query.isLoading,
+  };
+}
+
 export function useMachines(blockIdInput?: string | null): UseMachinesResult {
   const queryClient = useQueryClient();
   const [realtimeOffline, setRealtimeOffline] = useState(false);
@@ -39,21 +57,11 @@ export function useMachines(blockIdInput?: string | null): UseMachinesResult {
     staleTime: 1000 * 15,
   });
 
-  // Block Info Query — if we have a blockId from profile, use it; otherwise fetch first block
-  const blockQuery = useQuery({
-    queryKey: ['hostel_block', blockIdInput ?? 'first'],
-    queryFn: async () => {
-      if (blockIdInput) {
-        return fetchHostelBlock(blockIdInput);
-      }
-      // No block assigned to profile yet — fetch the first block in DB
-      return fetchFirstBlock();
-    },
-    staleTime: 1000 * 60 * 5,
-  });
+  // Block Info Query via shared useHostelBlock hook
+  const { block, isLoading: isBlockLoading } = useHostelBlock(blockIdInput);
 
   // Determine blockId for realtime subscription (use fetched block if no input)
-  const resolvedBlockId = blockIdInput ?? blockQuery.data?.id ?? null;
+  const resolvedBlockId = blockIdInput ?? block?.id ?? null;
 
   // Realtime subscription
   useEffect(() => {
@@ -80,7 +88,6 @@ export function useMachines(blockIdInput?: string | null): UseMachinesResult {
   }, [resolvedBlockId, queryClient]);
 
   const machines = useMemo(() => machinesQuery.data || [], [machinesQuery.data]);
-  const block = blockQuery.data || null;
 
   const totalCount = machines.length;
   const availableCount = useMemo(
@@ -123,7 +130,7 @@ export function useMachines(blockIdInput?: string | null): UseMachinesResult {
     inUseCount,
     brokenCount,
     maintenanceCount,
-    isLoading: machinesQuery.isLoading || blockQuery.isLoading,
+    isLoading: machinesQuery.isLoading || isBlockLoading,
     isRefetching: machinesQuery.isRefetching,
     isError: machinesQuery.isError,
     error: machinesQuery.error as Error | null,

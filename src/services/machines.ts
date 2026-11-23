@@ -2,47 +2,12 @@ import { supabase } from './supabase';
 import { MachineWithSession, HostelBlock, MachineBoardRow } from '@/types';
 import { calculateRemainingMinutes, calculateProgressPercent } from '@/lib/timer';
 
-/**
- * Fetches all machines for the authenticated user's block.
- * Tries machine_board view first (has session join); falls back to direct machines table.
- * RLS on the machines table filters by block automatically via my_block().
- * Throws visibly on error — no mock or fallback data.
- */
-export async function fetchMachines(_blockId?: string): Promise<MachineWithSession[]> {
-  // Try machine_board view first (has session join)
-  const { data: viewData, error: viewError } = await supabase
-    .from('machine_board' as any)
-    .select('*')
-    .order('label', { ascending: true });
+let isMachineBoardAvailable: boolean | null = null;
 
-  // If view exists and has no error, use it
-  if (!viewError) {
-    const rows = (viewData as unknown as MachineBoardRow[]) || [];
-    const now = new Date();
-
-    return rows.map((machine) => {
-      if (machine.status === 'in_use' && machine.started_at && machine.ends_at) {
-        const timeLeftMinutes = calculateRemainingMinutes(machine.ends_at, now);
-        const progressPercent = calculateProgressPercent(machine.started_at, machine.ends_at, now);
-        return { ...machine, timeLeftMinutes, progressPercent };
-      }
-      return { ...machine, timeLeftMinutes: undefined, progressPercent: undefined };
-    }) as MachineWithSession[];
-  }
-
-  // If error is NOT a missing view in schema cache, throw immediately
-  if (
-    viewError.code !== 'PGRST205' &&
-    !viewError.message?.toLowerCase().includes('schema cache') &&
-    !viewError.message?.toLowerCase().includes('could not find the table')
-  ) {
-    throw new Error(viewError.message || 'Failed to fetch machines');
-  }
-
-  // Fallback: direct machines table (view not migrated yet in Supabase)
+async function fetchDirectMachines(): Promise<MachineWithSession[]> {
   const query = supabase.from('machines');
   if (!query || typeof query.select !== 'function') {
-    throw new Error(viewError.message || 'Failed to fetch machines');
+    return [];
   }
 
   const { data, error } = await query.select('*').order('label', { ascending: true });
@@ -67,6 +32,54 @@ export async function fetchMachines(_blockId?: string): Promise<MachineWithSessi
     timeLeftMinutes: undefined,
     progressPercent: undefined,
   })) as MachineWithSession[];
+}
+
+/**
+ * Fetches all machines for the authenticated user's block.
+ * Tries machine_board view first (has session join); falls back to direct machines table.
+ * RLS on the machines table filters by block automatically via my_block().
+ * Throws visibly on error — no mock or fallback data.
+ */
+export async function fetchMachines(_blockId?: string): Promise<MachineWithSession[]> {
+  // If we already know machine_board view does not exist in DB, query machines table directly
+  if (isMachineBoardAvailable === false) {
+    return fetchDirectMachines();
+  }
+
+  // Try machine_board view first (has session join)
+  const { data: viewData, error: viewError } = await supabase
+    .from('machine_board' as any)
+    .select('*')
+    .order('label', { ascending: true });
+
+  // If view exists and has no error, use it
+  if (!viewError) {
+    isMachineBoardAvailable = true;
+    const rows = (viewData as unknown as MachineBoardRow[]) || [];
+    const now = new Date();
+
+    return rows.map((machine) => {
+      if (machine.status === 'in_use' && machine.started_at && machine.ends_at) {
+        const timeLeftMinutes = calculateRemainingMinutes(machine.ends_at, now);
+        const progressPercent = calculateProgressPercent(machine.started_at, machine.ends_at, now);
+        return { ...machine, timeLeftMinutes, progressPercent };
+      }
+      return { ...machine, timeLeftMinutes: undefined, progressPercent: undefined };
+    }) as MachineWithSession[];
+  }
+
+  // If error is NOT a missing view in schema cache, throw immediately
+  if (
+    viewError.code !== 'PGRST205' &&
+    !viewError.message?.toLowerCase().includes('schema cache') &&
+    !viewError.message?.toLowerCase().includes('could not find the table')
+  ) {
+    throw new Error(viewError.message || 'Failed to fetch machines');
+  }
+
+  // Remember that view is not present to avoid repeated 404 network roundtrips
+  isMachineBoardAvailable = false;
+  return fetchDirectMachines();
 }
 
 /**

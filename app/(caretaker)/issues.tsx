@@ -5,7 +5,7 @@ import { colors, typography } from '@/theme/tokens';
 import { glassCard } from '@/theme/glass';
 import { Screen, Text, Button, Skeleton, ErrorBanner } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
-import { useMachines } from '@/hooks/useMachines';
+import { useHostelBlock } from '@/hooks/useMachines';
 import { useIssues } from '@/hooks/useIssues';
 import { resolveIssue } from '@/services/caretaker';
 import { ResolveIssueParams, MachineStatus } from '@/types';
@@ -27,7 +27,7 @@ function formatReportedTime(timestamp: string): string {
 export default function CaretakerIssuesScreen() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
-  const { block } = useMachines(profile?.hostel_block_id);
+  const { block } = useHostelBlock(profile?.hostel_block_id);
   const blockName = block?.name || 'Block A';
 
   const { issues, openCount, isLoading, isRefetching, isError, error, refetch } = useIssues();

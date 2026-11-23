@@ -25,8 +25,9 @@ SplashScreen.preventAutoHideAsync();
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 2,
-      staleTime: 1000 * 15,
+      retry: 1,
+      staleTime: 1000 * 30, // 30s fresh: keeps data in memory for instant tab transitions
+      gcTime: 1000 * 60 * 10,
     },
   },
 });
@@ -74,7 +75,7 @@ export default function RootLayout() {
               screenOptions={{
                 headerShown: false,
                 contentStyle: { backgroundColor: 'transparent' },
-                animation: 'fade',
+                animation: Platform.OS === 'web' ? 'none' : 'fade',
               }}
             />
           </View>
