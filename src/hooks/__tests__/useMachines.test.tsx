@@ -14,10 +14,12 @@ const mockMachines: MachineWithSession[] = [
     label: '01',
     capacity_kg: 7,
     status: 'available',
-    status_updated_by: null,
     status_updated_at: '',
+    verified_at: null,
     note: null,
-    created_at: '',
+    started_at: null,
+    ends_at: null,
+    is_finished: null,
   },
   {
     id: '2',
@@ -25,12 +27,14 @@ const mockMachines: MachineWithSession[] = [
     label: '02',
     capacity_kg: 7,
     status: 'in_use',
-    status_updated_by: null,
     status_updated_at: '',
+    verified_at: null,
     note: null,
+    started_at: null,
+    ends_at: null,
+    is_finished: null,
     timeLeftMinutes: 14,
     progressPercent: 60,
-    created_at: '',
   },
   {
     id: '3',
@@ -38,17 +42,18 @@ const mockMachines: MachineWithSession[] = [
     label: '03',
     capacity_kg: 7,
     status: 'broken',
-    status_updated_by: null,
     status_updated_at: '',
+    verified_at: null,
     note: 'Broken door',
-    created_at: '',
+    started_at: null,
+    ends_at: null,
+    is_finished: null,
   },
 ];
 
 const mockBlock: HostelBlock = {
   id: DEFAULT_BLOCK_ID,
   name: 'Block A',
-  created_at: '',
 };
 
 describe('useMachines hook', () => {

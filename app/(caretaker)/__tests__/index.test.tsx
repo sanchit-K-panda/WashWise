@@ -20,7 +20,6 @@ jest.mock('expo-router', () => ({
 const mockBlock: HostelBlock = {
   id: 'block-a',
   name: 'Block A',
-  created_at: '',
 };
 
 const mockMachines: MachineWithSession[] = [
@@ -30,10 +29,12 @@ const mockMachines: MachineWithSession[] = [
     label: '01',
     capacity_kg: 7,
     status: 'available',
-    status_updated_by: 'caretaker-1',
     status_updated_at: '2026-11-20T10:30:00Z',
+    verified_at: null,
     note: null,
-    created_at: '',
+    started_at: null,
+    ends_at: null,
+    is_finished: false,
   },
   {
     id: 'm2',
@@ -41,11 +42,13 @@ const mockMachines: MachineWithSession[] = [
     label: '02',
     capacity_kg: 7,
     status: 'in_use',
-    status_updated_by: 'caretaker-1',
     status_updated_at: '2026-11-20T09:15:00Z',
+    verified_at: null,
     note: null,
+    started_at: '2026-11-20T09:15:00Z',
+    ends_at: '2026-11-20T10:00:00Z',
+    is_finished: false,
     timeLeftMinutes: 20,
-    created_at: '',
   },
   {
     id: 'm3',
@@ -53,10 +56,12 @@ const mockMachines: MachineWithSession[] = [
     label: '03',
     capacity_kg: 8,
     status: 'broken',
-    status_updated_by: 'caretaker-1',
     status_updated_at: '',
+    verified_at: null,
     note: 'Door latch fault',
-    created_at: '',
+    started_at: null,
+    ends_at: null,
+    is_finished: false,
   },
 ];
 
@@ -91,8 +96,6 @@ describe('CaretakerHomeScreen', () => {
         name: 'John Caretaker',
         role: 'caretaker',
         hostel_block_id: 'block-a',
-        created_at: '',
-        updated_at: '',
       },
       session: {} as never,
       role: 'caretaker',

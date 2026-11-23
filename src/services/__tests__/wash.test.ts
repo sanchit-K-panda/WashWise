@@ -3,6 +3,7 @@ import {
   fetchWashConfig,
   startWash,
   collectWash,
+  cancelWash,
   reportMachineIssue,
   fetchActiveUserSession,
   fetchSessionDetails,
@@ -37,8 +38,9 @@ describe('Wash Service', () => {
         block_id: 'block-1',
         status_updated_by: null,
         status_updated_at: '',
+        verified_at: null,
+        verified_by: null,
         note: null,
-        created_at: '',
       };
 
       (supabase.from as jest.Mock).mockReturnValueOnce({
@@ -50,37 +52,52 @@ describe('Wash Service', () => {
       const machine = await fetchMachineById(machineId);
       expect(machine).toEqual(mockMachine);
     });
+
+    it('throws when supabase returns error', async () => {
+      (supabase.from as jest.Mock).mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest
+          .fn()
+          .mockResolvedValueOnce({ data: null, error: { message: 'Database error' } }),
+      });
+
+      await expect(fetchMachineById(machineId)).rejects.toThrow('Database error');
+    });
   });
 
   describe('fetchWashConfig', () => {
     it('returns wash programs, temp and spin adjustments', async () => {
       const mockPrograms = [
-        { id: 'normal', name: 'Normal', base_minutes: 35, per_kg_minutes: 2, active: true },
+        { id: 'prog-1', name: 'Normal', base_minutes: 35, per_kg_minutes: 2, active: true },
       ];
       const mockTemps = [
-        { temp: 'Cold', minutes: 0 },
-        { temp: '40', minutes: 5 },
+        { temp: 'cold', minutes: 0 },
+        { temp: '40', minutes: 8 },
       ];
       const mockSpins = [
-        { spin: 'Low', minutes: 0 },
-        { spin: 'High', minutes: 4 },
+        { spin: 'low', minutes: 0 },
+        { spin: 'high', minutes: 5 },
       ];
 
       (supabase.from as jest.Mock).mockImplementation((table: string) => {
         if (table === 'wash_programs') {
           return {
             select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockResolvedValueOnce({ data: mockPrograms, error: null }),
+            eq: jest.fn().mockReturnThis(),
+            order: jest.fn().mockResolvedValueOnce({ data: mockPrograms, error: null }),
           };
         }
         if (table === 'temp_adjustments') {
           return {
-            select: jest.fn().mockResolvedValueOnce({ data: mockTemps, error: null }),
+            select: jest.fn().mockReturnThis(),
+            order: jest.fn().mockResolvedValueOnce({ data: mockTemps, error: null }),
           };
         }
         if (table === 'spin_adjustments') {
           return {
-            select: jest.fn().mockResolvedValueOnce({ data: mockSpins, error: null }),
+            select: jest.fn().mockReturnThis(),
+            order: jest.fn().mockResolvedValueOnce({ data: mockSpins, error: null }),
           };
         }
         return {};
@@ -96,21 +113,24 @@ describe('Wash Service', () => {
   describe('startWash', () => {
     const params = {
       machineId,
-      programId: 'normal',
+      programId: 'prog-1',
       temp: '40',
-      spin: 'High',
+      spin: 'high',
       weightKg: 5,
     };
 
     it('calls start_wash RPC and returns session payload on success', async () => {
       const mockSession = {
-        session_id: 'sess-123',
+        id: 'sess-123',
         machine_id: machineId,
-        machine_label: '01',
-        program_name: 'Normal',
-        duration_minutes: 48,
+        user_id: 'user-1',
+        program_id: 'prog-1',
+        temp: '40',
+        spin: 'high',
+        weight_kg: 5,
         started_at: '2026-11-20T10:00:00Z',
         ends_at: '2026-11-20T10:48:00Z',
+        collected_at: null,
         status: 'running',
       };
 
@@ -122,14 +142,20 @@ describe('Wash Service', () => {
       const result = await startWash(params);
       expect(result.success).toBe(true);
       expect(result.session).toEqual(mockSession);
+      expect(supabase.rpc).toHaveBeenCalledWith('start_wash', {
+        p_machine: machineId,
+        p_program: 'prog-1',
+        p_temp: '40',
+        p_spin: 'high',
+        p_weight: 5,
+      });
     });
 
-    it('detects race condition when machine is already occupied (WW001)', async () => {
+    it('detects race condition when machine is unavailable', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
         data: null,
         error: {
-          code: 'WW001',
-          message: 'Machine is not available (current status: in_use)',
+          message: 'machine_unavailable',
         },
       });
 
@@ -137,37 +163,64 @@ describe('Wash Service', () => {
       expect(result.success).toBe(false);
       expect(result.isRaceConflict).toBe(true);
     });
+
+    it('detects overload when weight exceeds capacity', async () => {
+      (supabase.rpc as jest.Mock).mockResolvedValueOnce({
+        data: null,
+        error: {
+          message: 'overload',
+        },
+      });
+
+      const result = await startWash(params);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('exceeds machine capacity');
+    });
   });
 
-  describe('collectWash', () => {
-    it('calls collect_wash RPC and returns success', async () => {
+  describe('endWash and collectWash', () => {
+    it('calls end_wash RPC with outcome collected', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
-        data: { success: true },
+        data: { id: sessionId, status: 'collected' },
         error: null,
       });
 
       const result = await collectWash(sessionId);
-      expect(supabase.rpc).toHaveBeenCalledWith('collect_wash', {
-        p_session_id: sessionId,
+      expect(supabase.rpc).toHaveBeenCalledWith('end_wash', {
+        p_session: sessionId,
+        p_outcome: 'collected',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('calls end_wash RPC with outcome cancelled', async () => {
+      (supabase.rpc as jest.Mock).mockResolvedValueOnce({
+        data: { id: sessionId, status: 'cancelled' },
+        error: null,
+      });
+
+      const result = await cancelWash(sessionId);
+      expect(supabase.rpc).toHaveBeenCalledWith('end_wash', {
+        p_session: sessionId,
+        p_outcome: 'cancelled',
       });
       expect(result.success).toBe(true);
     });
   });
 
   describe('reportMachineIssue', () => {
-    it('inserts issue report for machine when user is signed in', async () => {
-      (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
-        data: { user: { id: 'user-1' } },
+    it('calls report_issue RPC with machine and description', async () => {
+      (supabase.rpc as jest.Mock).mockResolvedValueOnce({
+        data: { id: 'issue-1', machine_id: machineId },
         error: null,
-      });
-
-      (supabase.from as jest.Mock).mockReturnValueOnce({
-        insert: jest.fn().mockResolvedValueOnce({ error: null }),
       });
 
       const result = await reportMachineIssue(machineId, 'Door latch broken');
       expect(result.success).toBe(true);
-      expect(supabase.from).toHaveBeenCalledWith('issue_reports');
+      expect(supabase.rpc).toHaveBeenCalledWith('report_issue', {
+        p_machine: machineId,
+        p_description: 'Door latch broken',
+      });
     });
   });
 
@@ -189,7 +242,6 @@ describe('Wash Service', () => {
           return {
             select: jest.fn().mockReturnThis(),
             eq: jest.fn().mockReturnThis(),
-            in: jest.fn().mockReturnThis(),
             order: jest.fn().mockReturnThis(),
             limit: jest.fn().mockReturnThis(),
             maybeSingle: jest.fn().mockResolvedValueOnce({ data: mockSession, error: null }),

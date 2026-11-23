@@ -27,9 +27,9 @@ export function useMachines(blockIdInput?: string | null): UseMachinesResult {
   const queryClient = useQueryClient();
   const [realtimeOffline, setRealtimeOffline] = useState(false);
 
-  // Machines Query
+  // Machines Query (scoped per user block via view)
   const machinesQuery = useQuery({
-    queryKey: ['machines', blockId],
+    queryKey: ['machines'],
     queryFn: () => fetchMachines(blockId),
     staleTime: 1000 * 15,
   });
@@ -48,7 +48,8 @@ export function useMachines(blockIdInput?: string | null): UseMachinesResult {
     const unsubscribe = subscribeToMachineChanges(
       blockId,
       () => {
-        queryClient.invalidateQueries({ queryKey: ['machines', blockId] });
+        queryClient.invalidateQueries({ queryKey: ['machines'] });
+        queryClient.invalidateQueries({ queryKey: ['issues'] });
       },
       (status) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {

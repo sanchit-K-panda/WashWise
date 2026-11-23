@@ -38,8 +38,9 @@ const mockMachine: Machine = {
   status: 'available',
   status_updated_by: null,
   status_updated_at: '',
+  verified_at: null,
+  verified_by: null,
   note: null,
-  created_at: '',
 };
 
 const mockConfig = {

@@ -1,412 +1,495 @@
-import { useState } from 'react';
-import { View, TextInput, Pressable } from 'react-native';
+import React, { useState } from 'react';
 import {
-  Mail,
-  Lock,
-  User,
-  Shield,
-  ArrowRight,
-  AlertCircle,
-  CheckCircle2,
-} from 'lucide-react-native';
-import { colors } from '@/theme/tokens';
-import { Screen, Text, Button } from '@/components/ui';
+  View,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  Platform,
+  KeyboardAvoidingView,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
+import { WashingMachine, Mail, Lock, User, Eye, EyeOff, ArrowRight } from 'lucide-react-native';
+import { Text } from '@/components/ui';
 import { useAuth } from '@/hooks/useAuth';
-
-type RoleTab = 'student' | 'caretaker';
-type StudentMode = 'signin' | 'register';
 
 export default function LoginScreen() {
   const { signInWithPassword, signUpWithPassword } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<RoleTab>('student');
-  const [studentMode, setStudentMode] = useState<StudentMode>('signin');
+  // Mode state matching estimator HTML
+  const [isStaff, setIsStaff] = useState(false);
+  const [isRegister, setIsRegister] = useState(false);
 
   // Form fields
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  // Caretaker form fields
-  const [caretakerUsername, setCaretakerUsername] = useState('username_1');
-  const [caretakerPassword, setCaretakerPassword] = useState('caretaker123');
-
+  // Status
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const handleStudentSubmit = async () => {
+  const handleSubmit = async () => {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const trimmedEmail = email.trim();
-    const trimmedPassword = password.trim();
+    const trimmedId = identifier.trim();
+    const trimmedPass = password.trim();
 
-    if (!trimmedEmail) {
-      setErrorMessage('Please enter your email address');
-      return;
-    }
-
-    if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
-      setErrorMessage('Please enter a valid email address');
-      return;
-    }
-
-    if (trimmedPassword.length < 6) {
-      setErrorMessage('Password must be at least 6 characters');
-      return;
-    }
-
-    if (studentMode === 'register') {
+    if (!isStaff && isRegister) {
       const trimmedName = name.trim();
       if (!trimmedName) {
         setErrorMessage('Please enter your full name');
         return;
       }
+      if (!trimmedId || !trimmedId.includes('@') || !trimmedId.includes('.')) {
+        setErrorMessage('Please enter a valid email address');
+        return;
+      }
+      if (trimmedPass.length < 6) {
+        setErrorMessage('Password must be at least 6 characters');
+        return;
+      }
 
       setIsSubmitting(true);
       try {
-        const result = await signUpWithPassword(trimmedName, trimmedEmail, trimmedPassword);
+        const result = await signUpWithPassword(trimmedName, trimmedId, trimmedPass);
         if (!result.success) {
           setErrorMessage(result.error || 'Registration failed. Please try again.');
         } else {
-          setSuccessMessage('Account created successfully!');
+          setSuccessMessage('Account created successfully! Signing in…');
+          await signInWithPassword(trimmedId, trimmedPass);
         }
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Registration failed');
       } finally {
         setIsSubmitting(false);
       }
-    } else {
-      setIsSubmitting(true);
-      try {
-        const result = await signInWithPassword(trimmedEmail, trimmedPassword);
-        if (!result.success) {
-          setErrorMessage(result.error || 'Invalid email or password. Please try again.');
-        }
-      } finally {
-        setIsSubmitting(false);
-      }
-    }
-  };
-
-  const handleCaretakerSubmit = async () => {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    const trimmedUsername = caretakerUsername.trim();
-    const trimmedPass = caretakerPassword.trim();
-
-    if (!trimmedUsername) {
-      setErrorMessage('Please enter caretaker username');
       return;
     }
 
-    if (!trimmedPass) {
-      setErrorMessage('Please enter caretaker password');
+    // Sign in mode (student or staff)
+    if (!trimmedId) {
+      setErrorMessage(isStaff ? 'Enter your username' : 'Enter your email address');
+      return;
+    }
+    if (!isStaff && (!trimmedId.includes('@') || !trimmedId.includes('.'))) {
+      setErrorMessage('Please enter a valid email address');
+      return;
+    }
+    if (trimmedPass.length < 6) {
+      setErrorMessage('Password must be at least 6 characters');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await signInWithPassword(trimmedUsername, trimmedPass);
+      const result = await signInWithPassword(trimmedId, trimmedPass);
       if (!result.success) {
-        setErrorMessage(result.error || 'Invalid caretaker credentials');
+        setErrorMessage(result.error || 'Invalid credentials. Please try again.');
       }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Sign in failed');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const fillCaretakerDemo = () => {
-    setCaretakerUsername('username_1');
-    setCaretakerPassword('caretaker123');
-    setErrorMessage(null);
-  };
+  const title = isStaff ? 'Staff sign in' : isRegister ? 'Create account' : 'Sign in';
+  const subtitle = isStaff
+    ? 'For hostel laundry staff. Your account is created by the warden.'
+    : 'Check which hostel machines are free and time your wash.';
+  const idLabel = isStaff ? 'Username' : 'Email address';
+  const idPlaceholder = isStaff ? 'username_1' : 'you@college.edu';
+  const submitText = isRegister && !isStaff ? 'Create account' : 'Sign in';
 
   return (
-    <Screen
-      header={{
-        title:
-          activeTab === 'student'
-            ? studentMode === 'signin'
-              ? 'Sign in'
-              : 'Register'
-            : 'Caretaker Portal',
-        subtitle:
-          activeTab === 'student'
-            ? studentMode === 'signin'
-              ? 'Enter your email and password to access hostel laundry.'
-              : 'Create an account with your name, email, and password.'
-            : 'Hostel machine maintenance and verification access.',
-      }}
-      stickyFooter={
-        <View className="space-y-3 gap-2">
-          {activeTab === 'student' ? (
-            <>
-              <Button
-                loading={isSubmitting}
-                onPress={handleStudentSubmit}
-                accessibilityLabel={studentMode === 'signin' ? 'Sign in' : 'Create account'}
-                rightIcon={<ArrowRight size={18} strokeWidth={1.75} color="#FFFFFF" />}
-              >
-                {studentMode === 'signin' ? 'Sign in' : 'Create account'}
-              </Button>
-
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  studentMode === 'signin' ? 'Switch to registration' : 'Switch to sign in'
-                }
-                onPress={() => {
-                  setErrorMessage(null);
-                  setSuccessMessage(null);
-                  setStudentMode(studentMode === 'signin' ? 'register' : 'signin');
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                className="py-2 items-center justify-center min-h-[44px]"
-              >
-                <Text variant="caption" color="muted">
-                  {studentMode === 'signin'
-                    ? "Don't have an account? Register"
-                    : 'Already have an account? Sign in'}
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <Button
-              loading={isSubmitting}
-              onPress={handleCaretakerSubmit}
-              accessibilityLabel="Sign in as Caretaker"
-              rightIcon={<ArrowRight size={18} strokeWidth={1.75} color="#FFFFFF" />}
-            >
-              Sign in as Caretaker
-            </Button>
-          )}
-        </View>
-      }
-    >
-      {/* Role Selection Tabs (Anti-slop, clean tabs) */}
-      <View className="flex-row bg-surface p-1 rounded-input border border-hairline mb-5">
-        <Pressable
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === 'student' }}
-          accessibilityLabel="Student role tab"
-          onPress={() => {
-            setActiveTab('student');
-            setErrorMessage(null);
-            setSuccessMessage(null);
-          }}
-          className={`flex-1 py-2.5 items-center justify-center rounded-md ${
-            activeTab === 'student' ? 'bg-bg border border-hairline' : ''
-          }`}
-        >
-          <Text
-            variant="caption"
-            color={activeTab === 'student' ? 'ink' : 'muted'}
-            style={{ fontWeight: activeTab === 'student' ? '600' : '400' }}
-          >
-            Student
-          </Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === 'caretaker' }}
-          accessibilityLabel="Caretaker role tab"
-          onPress={() => {
-            setActiveTab('caretaker');
-            setErrorMessage(null);
-            setSuccessMessage(null);
-          }}
-          className={`flex-1 py-2.5 items-center justify-center rounded-md ${
-            activeTab === 'caretaker' ? 'bg-bg border border-hairline' : ''
-          }`}
-        >
-          <Text
-            variant="caption"
-            color={activeTab === 'caretaker' ? 'ink' : 'muted'}
-            style={{ fontWeight: activeTab === 'caretaker' ? '600' : '400' }}
-          >
-            Caretaker
-          </Text>
-        </Pressable>
+    <View style={styles.root}>
+      {/* Background ambient light blobs matching HTML .b1, .b2, .b3 */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={styles.blob1} />
+        <View style={styles.blob2} />
+        <View style={styles.blob3} />
       </View>
 
-      {/* Error Alert */}
-      {errorMessage && (
-        <View
-          accessibilityRole="alert"
-          accessibilityLabel={errorMessage}
-          className="flex-row items-center gap-2.5 p-3.5 bg-surface border border-status-broken rounded-md mb-4"
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboardContainer}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <AlertCircle size={18} strokeWidth={1.75} color={colors.status.broken} />
-          <Text variant="caption" color="broken" style={{ flex: 1 }}>
-            {errorMessage}
-          </Text>
-        </View>
-      )}
+          {/* Brand header */}
+          <View style={styles.brand}>
+            <View style={styles.mark}>
+              <WashingMachine size={22} color="#1F6FA8" strokeWidth={1.9} />
+            </View>
+            <Text style={styles.brandTitle}>WashWise</Text>
+          </View>
 
-      {/* Success Alert */}
-      {successMessage && (
-        <View
-          accessibilityRole="alert"
-          accessibilityLabel={successMessage}
-          className="flex-row items-center gap-2.5 p-3.5 bg-surface border border-status-available rounded-md mb-4"
-        >
-          <CheckCircle2 size={18} strokeWidth={1.75} color={colors.status.available} />
-          <Text variant="caption" color="available" style={{ flex: 1 }}>
-            {successMessage}
-          </Text>
-        </View>
-      )}
+          {/* Heading */}
+          <Text style={styles.h1}>{title}</Text>
+          <Text style={styles.cap}>{subtitle}</Text>
 
-      {activeTab === 'student' ? (
-        <View className="space-y-4 gap-4 mt-1">
-          {studentMode === 'register' && (
-            <View>
-              <Text variant="caption" style={{ marginBottom: 6 }}>
-                Full Name
-              </Text>
-              <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
-                <User size={18} strokeWidth={1.75} color={colors.ink.muted} />
+          {/* Error Message */}
+          {errorMessage && (
+            <Text style={styles.err} accessibilityRole="alert">
+              {errorMessage}
+            </Text>
+          )}
+
+          {/* Success Message */}
+          {successMessage && (
+            <Text style={styles.successText} accessibilityRole="alert">
+              {successMessage}
+            </Text>
+          )}
+
+          {/* Form */}
+          <View style={styles.form}>
+            {/* Full Name field (Register only) */}
+            {isRegister && !isStaff && (
+              <View style={styles.fld} testID="name-field">
+                <Text style={styles.fldLabel}>Full name</Text>
+                <View style={styles.inp}>
+                  <User size={18} color="#4F6A80" />
+                  <TextInput
+                    testID="name-input"
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Aarav Mehta"
+                    placeholderTextColor="#4F6A80"
+                    autoCapitalize="words"
+                    style={styles.input}
+                    editable={!isSubmitting}
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Identifier (Email or Username) */}
+            <View style={styles.fld}>
+              <Text style={styles.fldLabel}>{idLabel}</Text>
+              <View style={styles.inp}>
+                {isStaff ? <User size={18} color="#4F6A80" /> : <Mail size={18} color="#4F6A80" />}
                 <TextInput
-                  testID="name-input"
-                  accessibilityLabel="Full name"
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
+                  testID={isStaff ? 'username-input' : 'email-input'}
+                  value={identifier}
+                  onChangeText={setIdentifier}
+                  placeholder={idPlaceholder}
+                  placeholderTextColor="#4F6A80"
+                  autoCapitalize="none"
                   autoCorrect={false}
-                  placeholder="e.g. John Doe"
-                  placeholderTextColor={colors.ink.muted}
-                  className="flex-1 font-sans text-ink text-[15px] ml-2"
+                  keyboardType={isStaff ? 'default' : 'email-address'}
+                  style={styles.input}
                   editable={!isSubmitting}
                 />
               </View>
             </View>
-          )}
 
-          <View>
-            <Text variant="caption" style={{ marginBottom: 6 }}>
-              Email address
-            </Text>
-            <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
-              <Mail size={18} strokeWidth={1.75} color={colors.ink.muted} />
-              <TextInput
-                testID="email-input"
-                accessibilityLabel="Email address"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="name@example.com"
-                placeholderTextColor={colors.ink.muted}
-                className="flex-1 font-sans text-ink text-[15px] ml-2"
-                editable={!isSubmitting}
-              />
-            </View>
-          </View>
-
-          <View>
-            <Text variant="caption" style={{ marginBottom: 6 }}>
-              Password
-            </Text>
-            <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
-              <Lock size={18} strokeWidth={1.75} color={colors.ink.muted} />
-              <TextInput
-                testID="password-input"
-                accessibilityLabel="Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                placeholder="••••••••"
-                placeholderTextColor={colors.ink.muted}
-                className="flex-1 font-sans text-ink text-[15px] ml-2"
-                editable={!isSubmitting}
-                onSubmitEditing={handleStudentSubmit}
-              />
-            </View>
-            <Text variant="caption" color="muted" style={{ marginTop: 4 }}>
-              Must be at least 6 characters.
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <View className="space-y-4 gap-4 mt-1">
-          {/* Caretaker Info Card */}
-          <View className="p-3.5 bg-surface border border-hairline rounded-input">
-            <View className="flex-row items-center justify-between mb-1">
-              <View className="flex-row items-center gap-1.5">
-                <Shield size={16} strokeWidth={1.75} color={colors.sky[700]} />
-                <Text variant="caption" color="ink" style={{ fontWeight: '600' }}>
-                  Caretaker Credentials
-                </Text>
+            {/* Password */}
+            <View style={styles.fld}>
+              <Text style={styles.fldLabel}>Password</Text>
+              <View style={styles.inp}>
+                <Lock size={18} color="#4F6A80" />
+                <TextInput
+                  testID="password-input"
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="At least 6 characters"
+                  placeholderTextColor="#4F6A80"
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.input}
+                  editable={!isSubmitting}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                  onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.eyeBtn}
+                >
+                  {showPassword ? (
+                    <EyeOff size={18} color="#4F6A80" />
+                  ) : (
+                    <Eye size={18} color="#4F6A80" />
+                  )}
+                </Pressable>
               </View>
+            </View>
+
+            {/* Submit Button */}
+            <Pressable
+              testID="submit-button"
+              accessibilityRole="button"
+              accessibilityLabel={submitText}
+              onPress={handleSubmit}
+              disabled={isSubmitting}
+              style={({ pressed }) => [
+                styles.btn,
+                pressed && styles.btnActive,
+                isSubmitting && { opacity: 0.7 },
+              ]}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.btnText}>{submitText}</Text>
+                  <ArrowRight size={18} color="#FFFFFF" strokeWidth={2} />
+                </>
+              )}
+            </Pressable>
+          </View>
+
+          {/* Student Account Mode Switcher */}
+          {!isStaff && (
+            <View style={styles.switchRow}>
+              <Text style={styles.cap}>
+                {isRegister ? 'Already registered? ' : 'New student? '}
+              </Text>
               <Pressable
+                testID="switch-mode-button"
                 accessibilityRole="button"
-                accessibilityLabel="Autofill caretaker credentials"
-                onPress={fillCaretakerDemo}
+                accessibilityLabel={isRegister ? 'Switch to sign in' : 'Switch to registration'}
+                onPress={() => {
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  setIsRegister(!isRegister);
+                }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text variant="caption" color="accent" style={{ fontWeight: '600' }}>
-                  Autofill
-                </Text>
+                <Text style={styles.lnk}>{isRegister ? 'Sign in' : 'Create an account'}</Text>
               </Pressable>
             </View>
-            <Text variant="caption" color="muted">
-              Username:{' '}
-              <Text variant="caption" color="ink" style={{ fontWeight: '600' }}>
-                username_1
-              </Text>
-              {'\n'}Password:{' '}
-              <Text variant="caption" color="ink" style={{ fontWeight: '600' }}>
-                caretaker123
-              </Text>
-            </Text>
-          </View>
+          )}
 
-          <View>
-            <Text variant="caption" style={{ marginBottom: 6 }}>
-              Caretaker Username
-            </Text>
-            <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
-              <User size={18} strokeWidth={1.75} color={colors.ink.muted} />
-              <TextInput
-                testID="caretaker-username-input"
-                accessibilityLabel="Caretaker Username"
-                value={caretakerUsername}
-                onChangeText={setCaretakerUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="username_1"
-                placeholderTextColor={colors.ink.muted}
-                className="flex-1 font-sans text-ink text-[15px] ml-2"
-                editable={!isSubmitting}
-              />
-            </View>
+          {/* Staff Mode Switcher */}
+          <View style={styles.staffRow}>
+            <Text style={styles.cap}>{isStaff ? 'Not staff? ' : 'Hostel caretaker? '}</Text>
+            <Pressable
+              testID="staff-toggle-button"
+              accessibilityRole="button"
+              accessibilityLabel={isStaff ? 'Switch to student sign in' : 'Switch to staff sign in'}
+              onPress={() => {
+                setErrorMessage(null);
+                setSuccessMessage(null);
+                setIsStaff(!isStaff);
+                setIsRegister(false);
+                setIdentifier('');
+                setPassword('');
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.lnk}>{isStaff ? 'Student sign in' : 'Staff sign in'}</Text>
+            </Pressable>
           </View>
-
-          <View>
-            <Text variant="caption" style={{ marginBottom: 6 }}>
-              Password
-            </Text>
-            <View className="flex-row items-center bg-surface border border-hairline rounded-input px-3 h-12">
-              <Lock size={18} strokeWidth={1.75} color={colors.ink.muted} />
-              <TextInput
-                testID="caretaker-password-input"
-                accessibilityLabel="Caretaker Password"
-                value={caretakerPassword}
-                onChangeText={setCaretakerPassword}
-                secureTextEntry
-                placeholder="caretaker123"
-                placeholderTextColor={colors.ink.muted}
-                className="flex-1 font-sans text-ink text-[15px] ml-2"
-                editable={!isSubmitting}
-                onSubmitEditing={handleCaretakerSubmit}
-              />
-            </View>
-          </View>
-        </View>
-      )}
-    </Screen>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#E3F1FB',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  blob1: {
+    position: 'absolute',
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: '#7EC4F3',
+    top: -70,
+    right: -80,
+    opacity: 0.85,
+    ...(Platform.OS === 'web' ? ({ filter: 'blur(40px)', WebkitFilter: 'blur(40px)' } as any) : {}),
+  },
+  blob2: {
+    position: 'absolute',
+    width: 230,
+    height: 230,
+    borderRadius: 115,
+    backgroundColor: '#B3DDF7',
+    top: 300,
+    left: -100,
+    opacity: 0.85,
+    ...(Platform.OS === 'web' ? ({ filter: 'blur(40px)', WebkitFilter: 'blur(40px)' } as any) : {}),
+  },
+  blob3: {
+    position: 'absolute',
+    width: 270,
+    height: 270,
+    borderRadius: 135,
+    backgroundColor: '#5FAEE8',
+    bottom: -100,
+    right: -70,
+    opacity: 0.7,
+    ...(Platform.OS === 'web' ? ({ filter: 'blur(40px)', WebkitFilter: 'blur(40px)' } as any) : {}),
+  },
+  keyboardContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 40,
+  },
+  brand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 4,
+  },
+  mark: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255, 255, 255, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1F6FA8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 2,
+    ...(Platform.OS === 'web'
+      ? ({ backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)' } as any)
+      : {}),
+  },
+  brandTitle: {
+    color: '#1F6FA8',
+    fontSize: 17,
+    fontWeight: '500',
+    fontFamily: 'PlusJakartaSans_500Medium',
+  },
+  h1: {
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: '500',
+    fontFamily: 'PlusJakartaSans_500Medium',
+    letterSpacing: -0.4,
+    color: '#0B2233',
+    marginTop: 34,
+  },
+  cap: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: '#4F6A80',
+    marginTop: 4,
+    marginBottom: 18,
+    fontFamily: 'PlusJakartaSans_400Regular',
+  },
+  form: {
+    width: '100%',
+  },
+  fld: {
+    marginBottom: 14,
+  },
+  fldLabel: {
+    fontSize: 13,
+    marginBottom: 6,
+    color: '#0B2233',
+    fontFamily: 'PlusJakartaSans_500Medium',
+  },
+  inp: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 50,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    shadowColor: '#1F6FA8',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 1,
+    ...(Platform.OS === 'web'
+      ? ({ backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)' } as any)
+      : {}),
+  },
+  input: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    color: '#0B2233',
+    fontFamily: 'PlusJakartaSans_400Regular',
+    paddingVertical: 12,
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : {}),
+  },
+  eyeBtn: {
+    padding: 8,
+  },
+  err: {
+    fontSize: 12,
+    color: '#B83A3A',
+    minHeight: 16,
+    marginBottom: 6,
+    fontFamily: 'PlusJakartaSans_500Medium',
+  },
+  successText: {
+    fontSize: 12,
+    color: '#12805A',
+    minHeight: 16,
+    marginBottom: 6,
+    fontFamily: 'PlusJakartaSans_500Medium',
+  },
+  btn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    minHeight: 50,
+    borderRadius: 16,
+    backgroundColor: '#2F8BD0',
+    marginTop: 4,
+    shadowColor: '#2F8BD0',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.32,
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  btnActive: {
+    backgroundColor: '#1F6FA8',
+    transform: [{ scale: 0.98 }],
+  },
+  btnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+    fontFamily: 'PlusJakartaSans_500Medium',
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  staffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  lnk: {
+    color: '#1F6FA8',
+    fontWeight: '500',
+    fontSize: 13,
+    fontFamily: 'PlusJakartaSans_500Medium',
+    marginTop: 4,
+    marginBottom: 18,
+  },
+});

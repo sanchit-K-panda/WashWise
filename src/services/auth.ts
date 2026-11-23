@@ -152,8 +152,6 @@ export async function verifyOtp(
       name: role === 'caretaker' ? 'Hostel Caretaker' : trimmedEmail.split('@')[0],
       role,
       hostel_block_id: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     };
 
     try {
@@ -215,8 +213,6 @@ export async function verifyOtp(
           name: role === 'caretaker' ? 'Hostel Caretaker' : trimmedEmail.split('@')[0],
           role,
           hostel_block_id: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         };
         return { session: mockSession, user: mockUser, profile: mockProfile };
       }
@@ -271,67 +267,12 @@ export async function signInWithPassword(
   const trimmedId = identifier.trim();
   const trimmedPass = password.trim();
 
-  // Caretaker fixed credentials check: username_1 / caretaker123
-  if (
-    trimmedId.toLowerCase() === 'username_1' ||
-    trimmedId.toLowerCase() === 'caretaker' ||
-    trimmedId.toLowerCase() === 'caretaker@washwise.internal'
-  ) {
-    if (trimmedPass !== 'caretaker123') {
-      return { session: null, user: null, profile: null, error: 'Invalid caretaker password' };
-    }
-
-    const mockCaretakerUser: User = {
-      id: 'c0000000-0000-0000-0000-000000000001',
-      app_metadata: {},
-      user_metadata: { full_name: 'Hostel Caretaker', role: 'caretaker' },
-      aud: 'authenticated',
-      created_at: new Date().toISOString(),
-      email: 'caretaker@washwise.internal',
-    };
-    const mockCaretakerSession: Session = {
-      access_token: 'mock-caretaker-token',
-      refresh_token: 'mock-caretaker-refresh',
-      expires_in: 3600,
-      token_type: 'bearer',
-      user: mockCaretakerUser,
-    };
-    const mockCaretakerProfile: Profile = {
-      id: mockCaretakerUser.id,
-      name: 'Hostel Caretaker',
-      role: 'caretaker',
-      hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    try {
-      await ExpoSecureStoreAdapter.setItem(
-        'washwise_demo_session',
-        JSON.stringify({
-          session: mockCaretakerSession,
-          user: mockCaretakerUser,
-          profile: mockCaretakerProfile,
-        })
-      );
-    } catch {
-      // ignore
-    }
-
-    return {
-      session: mockCaretakerSession,
-      user: mockCaretakerUser,
-      profile: mockCaretakerProfile,
-    };
-  }
-
-  // Student email/password validation
-  if (!trimmedId.includes('@')) {
+  if (!trimmedId) {
     return {
       session: null,
       user: null,
       profile: null,
-      error: 'Please enter a valid email address',
+      error: 'Please enter your email or username',
     };
   }
 
@@ -344,57 +285,51 @@ export async function signInWithPassword(
     };
   }
 
+  // If no '@', map to staff email: <username>@washwise.app
+  const emailToUse = trimmedId.includes('@')
+    ? trimmedId.toLowerCase()
+    : `${trimmedId.toLowerCase()}@washwise.app`;
+
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: trimmedId.toLowerCase(),
+      email: emailToUse,
       password: trimmedPass,
     });
 
     if (error) {
-      if (
-        (typeof __DEV__ !== 'undefined' && __DEV__) ||
-        isPlaceholderSupabase ||
-        error.message.includes('Invalid login credentials')
-      ) {
-        // Fallback to dev student session if user is testing locally
-        const mockStudentUser: User = {
-          id: 's0000000-0000-0000-0000-000000000001',
-          app_metadata: {},
-          user_metadata: { full_name: trimmedId.split('@')[0] },
-          aud: 'authenticated',
-          created_at: new Date().toISOString(),
-          email: trimmedId.toLowerCase(),
-        };
-        const mockStudentSession: Session = {
-          access_token: 'mock-student-token',
-          refresh_token: 'mock-student-refresh',
-          expires_in: 3600,
-          token_type: 'bearer',
-          user: mockStudentUser,
-        };
-        const mockStudentProfile: Profile = {
-          id: mockStudentUser.id,
-          name: trimmedId.split('@')[0],
-          role: 'student',
-          hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        return { session: mockStudentSession, user: mockStudentUser, profile: mockStudentProfile };
+      const msg = error.message || '';
+      let friendlyError = msg;
+      if (msg.includes('Invalid login credentials')) {
+        friendlyError = 'Invalid email/username or password.';
+      } else if (msg.includes('Email not confirmed')) {
+        friendlyError =
+          'Please confirm your email address before signing in, or disable "Confirm email" in Supabase Auth settings.';
+      } else if (msg.includes('rate limit')) {
+        friendlyError = 'Too many attempts. Please try again shortly.';
+      } else if (msg.includes('Network') || msg.includes('Failed to fetch')) {
+        friendlyError = 'Network error. Please check your connection and retry.';
       }
-      return { session: null, user: null, profile: null, error: error.message };
+      return { session: null, user: null, profile: null, error: friendlyError };
     }
 
-    if (!data.user) {
+    if (!data.user || !data.session) {
       return { session: null, user: null, profile: null, error: 'Sign in failed' };
     }
 
     const profileRes = await fetchOrCreateProfile(data.user);
+    if (!profileRes.profile) {
+      return {
+        session: data.session,
+        user: data.user,
+        profile: null,
+        error: profileRes.error || 'Failed to load user profile',
+      };
+    }
+
     return {
       session: data.session,
       user: data.user,
       profile: profileRes.profile,
-      error: profileRes.error,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Sign in failed';
@@ -448,52 +383,54 @@ export async function signUpWithPassword(
       options: {
         data: {
           full_name: trimmedName,
+          name: trimmedName,
           role: 'student',
         },
       },
     });
 
     if (error) {
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        // Fallback for dev mode
-        const mockStudentUser: User = {
-          id: 's0000000-0000-0000-0000-000000000001',
-          app_metadata: {},
-          user_metadata: { full_name: trimmedName },
-          aud: 'authenticated',
-          created_at: new Date().toISOString(),
-          email: trimmedEmail,
-        };
-        const mockStudentSession: Session = {
-          access_token: 'mock-student-token',
-          refresh_token: 'mock-student-refresh',
-          expires_in: 3600,
-          token_type: 'bearer',
-          user: mockStudentUser,
-        };
-        const mockStudentProfile: Profile = {
-          id: mockStudentUser.id,
-          name: trimmedName,
-          role: 'student',
-          hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        return { session: mockStudentSession, user: mockStudentUser, profile: mockStudentProfile };
+      const msg = error.message || '';
+      let friendlyError = msg;
+      if (msg.includes('User already registered')) {
+        friendlyError = 'An account with this email already exists. Try signing in.';
+      } else if (msg.includes('rate limit')) {
+        friendlyError = 'Sign up rate limit reached. Please try again in a few minutes.';
+      } else if (msg.includes('Network') || msg.includes('Failed to fetch')) {
+        friendlyError = 'Network error. Please check your connection and retry.';
       }
-      return { session: null, user: null, profile: null, error: error.message };
+      return { session: null, user: null, profile: null, error: friendlyError };
     }
 
     if (!data.user) {
       return { session: null, user: null, profile: null, error: 'Registration failed' };
     }
 
-    const profileRes = await fetchOrCreateProfile(data.user);
+    if (!data.session) {
+      try {
+        const loginAttempt = await supabase.auth.signInWithPassword({
+          email: trimmedEmail,
+          password: trimmedPass,
+        });
+        if (loginAttempt.data?.session && loginAttempt.data?.user) {
+          data.session = loginAttempt.data.session;
+          data.user = loginAttempt.data.user;
+        }
+      } catch {
+        // Fall back gracefully
+      }
+    }
+
+    let profile: Profile | null = null;
+    if (data.session) {
+      const profileRes = await fetchOrCreateProfile(data.user);
+      profile = profileRes.profile;
+    }
+
     return {
       session: data.session,
       user: data.user,
-      profile: profileRes.profile,
-      error: profileRes.error,
+      profile,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Registration failed';
@@ -502,24 +439,13 @@ export async function signUpWithPassword(
 }
 
 /**
- * Fetches user profile from profiles table, creating a default student profile if needed.
+ * Fetches user profile from profiles table.
+ * All user profiles are created server-side via on_auth_user_created trigger in DB_RESET.sql.
+ * Direct table writes/updates to role or block_id are forbidden by RLS.
  */
 export async function fetchOrCreateProfile(
   user: User
 ): Promise<{ profile: Profile | null; error?: string }> {
-  if (isPlaceholderSupabase) {
-    const role: UserRole = user.email?.includes('caretaker') ? 'caretaker' : 'student';
-    return {
-      profile: {
-        id: user.id,
-        name: (user.user_metadata?.full_name as string) || user.email?.split('@')[0] || 'Student',
-        role,
-        hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    };
-  }
   try {
     const { data, error } = await supabase
       .from('profiles')
@@ -532,48 +458,21 @@ export async function fetchOrCreateProfile(
     }
 
     if (data) {
-      if (!data.hostel_block_id) {
-        data.hostel_block_id = 'a0000000-0000-0000-0000-000000000001';
-        supabase
-          .from('profiles')
-          .update({ hostel_block_id: 'a0000000-0000-0000-0000-000000000001' })
-          .eq('id', user.id)
-          .then();
-      }
       return { profile: data as Profile };
     }
 
-    // Default profile for new signup if not yet seeded
-    const fallbackName =
-      (user.user_metadata?.full_name as string | undefined) ||
-      user.email?.split('@')[0] ||
-      'Student';
-
-    const newProfile: {
-      id: string;
-      name: string;
-      role: UserRole;
-      hostel_block_id: string | null;
-    } = {
-      id: user.id,
-      name: fallbackName,
-      role:
-        (user.user_metadata?.role as UserRole) ||
-        (user.email?.includes('caretaker') ? 'caretaker' : 'student'),
-      hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
+    return {
+      profile: {
+        id: user.id,
+        name:
+          (user.user_metadata?.name as string) ||
+          (user.user_metadata?.full_name as string) ||
+          user.email?.split('@')[0] ||
+          'Student',
+        role: (user.user_metadata?.role as UserRole) || 'student',
+        hostel_block_id: null,
+      },
     };
-
-    const { data: inserted, error: insertError } = await supabase
-      .from('profiles')
-      .insert(newProfile)
-      .select()
-      .single();
-
-    if (insertError) {
-      return { profile: null, error: insertError.message };
-    }
-
-    return { profile: inserted as Profile };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch user profile';
     return { profile: null, error: message };

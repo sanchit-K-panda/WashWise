@@ -1,5 +1,6 @@
 import {
   updateMachineStatus,
+  verifyMachine,
   forceClearMachine,
   fetchMachineStatusLogs,
   fetchBlockIssues,
@@ -25,9 +26,9 @@ describe('Caretaker Service', () => {
   });
 
   describe('updateMachineStatus', () => {
-    it('calls verify_machine_status RPC with machineId, status, and note', async () => {
+    it('calls set_machine_status RPC with machineId, status, and note', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
-        data: { success: true },
+        data: { id: machineId, status: 'maintenance' },
         error: null,
       });
 
@@ -37,41 +38,50 @@ describe('Caretaker Service', () => {
         note: 'Filter cleaning in progress',
       });
 
-      expect(supabase.rpc).toHaveBeenCalledWith('verify_machine_status', {
-        p_machine_id: machineId,
+      expect(supabase.rpc).toHaveBeenCalledWith('set_machine_status', {
+        p_machine: machineId,
         p_status: 'maintenance',
         p_note: 'Filter cleaning in progress',
       });
       expect(result.success).toBe(true);
     });
 
-    it('falls back to direct table update if RPC returns error', async () => {
+    it('returns error when RPC fails', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
         data: null,
-        error: { message: 'RPC not found' },
-      });
-
-      (supabase.from as jest.Mock).mockReturnValueOnce({
-        update: jest.fn().mockReturnValue({
-          eq: jest.fn().mockResolvedValueOnce({ error: null }),
-        }),
+        error: { message: 'forbidden' },
       });
 
       const result = await updateMachineStatus({
         machineId,
         status: 'broken',
-        note: 'Door latch cracked',
       });
 
-      expect(supabase.from).toHaveBeenCalledWith('machines');
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('You do not have permission to perform this action.');
+    });
+  });
+
+  describe('verifyMachine', () => {
+    it('calls verify_machine RPC', async () => {
+      (supabase.rpc as jest.Mock).mockResolvedValueOnce({
+        data: { id: machineId, verified_at: new Date().toISOString() },
+        error: null,
+      });
+
+      const result = await verifyMachine(machineId);
+
+      expect(supabase.rpc).toHaveBeenCalledWith('verify_machine', {
+        p_machine: machineId,
+      });
       expect(result.success).toBe(true);
     });
   });
 
   describe('forceClearMachine', () => {
-    it('calls force_clear_machine RPC', async () => {
+    it('calls set_machine_status RPC to available', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
-        data: { success: true },
+        data: { id: machineId, status: 'available' },
         error: null,
       });
 
@@ -80,9 +90,10 @@ describe('Caretaker Service', () => {
         reason: 'Clothes abandoned after cycle',
       });
 
-      expect(supabase.rpc).toHaveBeenCalledWith('force_clear_machine', {
-        p_machine_id: machineId,
-        p_reason: 'Clothes abandoned after cycle',
+      expect(supabase.rpc).toHaveBeenCalledWith('set_machine_status', {
+        p_machine: machineId,
+        p_status: 'available',
+        p_note: 'Clothes abandoned after cycle',
       });
       expect(result.success).toBe(true);
     });
@@ -98,6 +109,7 @@ describe('Caretaker Service', () => {
           new_status: 'in_use',
           changed_by: 'student-1',
           changed_at: '2026-11-20T10:00:00Z',
+          note: null,
           profiles: { name: 'Student One' },
         },
       ];
@@ -142,18 +154,18 @@ describe('Caretaker Service', () => {
       expect(issues).toEqual(mockIssues);
     });
 
-    it('resolves issue report', async () => {
+    it('resolves issue report via resolve_issue RPC', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
-        data: { success: true },
+        data: { id: 'issue-1', resolved_at: new Date().toISOString() },
         error: null,
       });
 
       const result = await resolveIssue('issue-1');
       expect(result.success).toBe(true);
-      expect(supabase.rpc).toHaveBeenCalledWith('resolve_issue_report', {
-        p_issue_id: 'issue-1',
-        p_machine_status: null,
-        p_status_note: null,
+      expect(supabase.rpc).toHaveBeenCalledWith('resolve_issue', {
+        p_report: 'issue-1',
+        p_new_status: null,
+        p_note: null,
       });
     });
   });

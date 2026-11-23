@@ -1,9 +1,10 @@
 import React from 'react';
-import { View } from 'react-native';
+import { View, StyleSheet, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, History, CheckCircle2, AlertCircle } from 'lucide-react-native';
-import { colors } from '@/theme/tokens';
+import { ArrowRight, History, CheckCircle2, AlertCircle, ChevronLeft } from 'lucide-react-native';
+import { colors, typography } from '@/theme/tokens';
+import { glassCard } from '@/theme/glass';
 import { Screen, Text, Chip, Skeleton, Button } from '@/components/ui';
 import { fetchMachineById } from '@/services/wash';
 import { fetchMachineStatusLogs } from '@/services/caretaker';
@@ -32,7 +33,7 @@ export default function CaretakerMachineLogScreen() {
 
   // Fetch status logs for this machine
   const { data: logs = [], isLoading: isLogsLoading } = useQuery<StatusLogEntry[]>({
-    queryKey: ['machine_status_logs', id],
+    queryKey: ['machine-log', id],
     queryFn: () => (id ? fetchMachineStatusLogs(id) : []),
     enabled: !!id,
     refetchInterval: 1000 * 10,
@@ -44,26 +45,23 @@ export default function CaretakerMachineLogScreen() {
   // Guard: Machine not found
   if (!isLoading && !machine) {
     return (
-      <Screen
-        header={{
-          title: 'Machine Audit Log',
-          subtitle: 'Unavailable',
-          onBack: () => router.back(),
-        }}
-      >
-        <View
-          testID="machine-not-found"
-          className="p-6 rounded-md border border-hairline bg-surface items-center text-center my-8"
+      <Screen scrollable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back to machines"
+          onPress={() => router.back()}
+          style={styles.backButton}
         >
+          <ChevronLeft size={16} color={colors.sky[700]} />
+          <Text style={styles.backText}>Machines</Text>
+        </Pressable>
+
+        <View testID="machine-not-found" style={styles.emptyCard}>
           <AlertCircle size={32} strokeWidth={1.75} color={colors.ink.muted} />
-          <Text variant="section" color="ink" style={{ textAlign: 'center', marginTop: 12 }}>
+          <Text style={[styles.cardTitle, { textAlign: 'center', marginTop: 12 }]}>
             Machine not found
           </Text>
-          <Text
-            variant="body"
-            color="muted"
-            style={{ textAlign: 'center', marginTop: 4, marginBottom: 16 }}
-          >
+          <Text style={[styles.cardSub, { textAlign: 'center', marginTop: 4, marginBottom: 16 }]}>
             The requested washing machine could not be located in this hostel block.
           </Text>
           <Button variant="secondary" onPress={() => router.back()}>
@@ -75,30 +73,32 @@ export default function CaretakerMachineLogScreen() {
   }
 
   return (
-    <Screen
-      scrollable
-      header={{
-        title: `Machine ${machineLabel}`,
-        subtitle: machine ? `${machine.capacity_kg} kg drum · Audit Log` : 'Status History',
-        onBack: () => router.back(),
-      }}
-    >
+    <Screen scrollable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Back to machines"
+        onPress={() => router.back()}
+        style={styles.backButton}
+      >
+        <ChevronLeft size={16} color={colors.sky[700]} />
+        <Text style={styles.backText}>Machines</Text>
+      </Pressable>
+
+      <Text style={styles.title}>Machine {machineLabel}</Text>
+      <Text style={styles.subtitle}>
+        {machine ? `${machine.capacity_kg} kg drum · Audit Log` : 'Status History'}
+      </Text>
+
       {/* Current Machine Overview Card */}
-      <View className="p-4 bg-surface rounded-md border border-hairline mb-6">
-        <View className="flex-row items-center justify-between mb-2">
-          <Text variant="section" color="ink">
-            Current Status
-          </Text>
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>Current Status</Text>
           {machine && <Chip variant={machine.status} />}
         </View>
 
-        {machine?.note ? (
-          <Text variant="body" color="ink" style={{ marginTop: 4, fontStyle: 'italic' }}>
-            &ldquo;{machine.note}&rdquo;
-          </Text>
-        ) : null}
+        {machine?.note ? <Text style={styles.noteText}>&ldquo;{machine.note}&rdquo;</Text> : null}
 
-        <Text variant="caption" color="muted" style={{ marginTop: 6 }}>
+        <Text style={styles.cardSub}>
           Last updated:{' '}
           {machine?.status_updated_at
             ? formatLogTimestamp(machine.status_updated_at)
@@ -107,67 +107,55 @@ export default function CaretakerMachineLogScreen() {
       </View>
 
       {/* History Section Header */}
-      <View className="flex-row items-center gap-2 mb-3">
-        <History size={18} strokeWidth={1.75} color={colors.ink.muted} />
-        <Text variant="section" color="ink">
-          Status history & audit trail
-        </Text>
+      <View style={styles.sectionHeaderRow}>
+        <History size={16} strokeWidth={1.75} color={colors.sky[700]} />
+        <Text style={styles.sectionTitle}>Status history & audit trail</Text>
       </View>
 
       {/* Log list or loading state */}
       {isLoading ? (
-        <View testID="logs-loading-skeletons" className="space-y-3 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <View
-              key={`log-skeleton-${i}`}
-              className="p-3.5 bg-surface border border-hairline rounded-md"
-            >
+        <View testID="logs-loading-skeletons" style={styles.skeletonList}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <View key={`log-skeleton-${i}`} style={styles.logCard}>
               <Skeleton.Line width="60%" style={{ height: 20 }} />
-              <View className="h-2" />
+              <View style={{ height: 8 }} />
               <Skeleton.Line width="40%" style={{ height: 14 }} />
             </View>
           ))}
         </View>
       ) : logs.length === 0 ? (
-        <View
-          testID="no-logs-state"
-          className="p-8 bg-surface border border-hairline rounded-md items-center text-center my-4"
-        >
-          <CheckCircle2 size={32} strokeWidth={1.75} color={colors.ink.muted} />
-          <Text variant="section" color="ink" style={{ textAlign: 'center', marginTop: 12 }}>
+        <View testID="no-logs-state" style={styles.emptyCard}>
+          <CheckCircle2 size={32} strokeWidth={1.75} color={colors.sky[700]} />
+          <Text style={[styles.cardTitle, { textAlign: 'center', marginTop: 12 }]}>
             No status changes logged
           </Text>
-          <Text variant="caption" color="muted" style={{ textAlign: 'center', marginTop: 4 }}>
+          <Text style={[styles.cardSub, { textAlign: 'center', marginTop: 4 }]}>
             Status transitions recorded by caretaker verification or automated sessions will appear
             here.
           </Text>
         </View>
       ) : (
-        <View testID="status-logs-list" className="space-y-3 gap-3">
+        <View testID="status-logs-list" style={styles.logsList}>
           {logs.map((log) => {
             const changerName = log.profiles?.name || 'System / Auto';
 
             return (
-              <View
-                key={log.id}
-                testID={`log-entry-${log.id}`}
-                className="p-3.5 bg-surface border border-hairline rounded-md"
-              >
+              <View key={log.id} testID={`log-entry-${log.id}`} style={styles.logCard}>
                 {/* Status Transition Row */}
-                <View className="flex-row items-center gap-2 mb-2">
-                  <Chip variant={log.old_status} />
+                <View style={styles.transitionRow}>
+                  {log.old_status ? (
+                    <Chip variant={log.old_status} />
+                  ) : (
+                    <Text style={styles.cardSub}>Created</Text>
+                  )}
                   <ArrowRight size={14} strokeWidth={2} color={colors.ink.muted} />
                   <Chip variant={log.new_status} />
                 </View>
 
                 {/* Metadata Row */}
-                <View className="flex-row items-center justify-between pt-1 border-t border-hairline">
-                  <Text variant="caption" color="muted">
-                    Updated by {changerName}
-                  </Text>
-                  <Text variant="caption" color="muted" tabular>
-                    {formatLogTimestamp(log.changed_at)}
-                  </Text>
+                <View style={styles.metaRow}>
+                  <Text style={styles.cardSub}>Updated by {changerName}</Text>
+                  <Text style={styles.cardSub}>{formatLogTimestamp(log.changed_at)}</Text>
                 </View>
               </View>
             );
@@ -175,7 +163,7 @@ export default function CaretakerMachineLogScreen() {
         </View>
       )}
 
-      <View className="mt-8 mb-4">
+      <View style={{ marginTop: 24, marginBottom: 16 }}>
         <Button
           variant="secondary"
           onPress={() => router.back()}
@@ -187,3 +175,111 @@ export default function CaretakerMachineLogScreen() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 28,
+    marginBottom: 4,
+  },
+  backText: {
+    fontFamily: typography.caption.fontFamily,
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.sky[700],
+  },
+  title: {
+    fontSize: 26,
+    lineHeight: 32,
+    fontFamily: typography.screenTitle.fontFamily,
+    fontWeight: '500',
+    color: colors.ink.DEFAULT,
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: typography.caption.fontFamily,
+    color: colors.ink.muted,
+    marginBottom: 16,
+    marginTop: 2,
+  },
+  card: {
+    ...glassCard,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 18,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontFamily: typography.section.fontFamily,
+    fontWeight: '500',
+    color: colors.ink.DEFAULT,
+  },
+  cardSub: {
+    fontSize: 12,
+    fontFamily: typography.caption.fontFamily,
+    color: colors.ink.muted,
+    marginTop: 4,
+  },
+  noteText: {
+    fontSize: 14,
+    fontFamily: typography.body.fontFamily,
+    color: colors.ink.DEFAULT,
+    fontStyle: 'italic',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontFamily: typography.section.fontFamily,
+    fontWeight: '500',
+    color: colors.ink.DEFAULT,
+  },
+  logsList: {
+    gap: 10,
+  },
+  skeletonList: {
+    gap: 10,
+  },
+  logCard: {
+    ...glassCard,
+    borderRadius: 16,
+    padding: 14,
+    gap: 8,
+  },
+  emptyCard: {
+    ...glassCard,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transitionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(15, 34, 48, 0.07)',
+  },
+});

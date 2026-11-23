@@ -126,26 +126,51 @@ describe('Auth Service', () => {
   });
 
   describe('signInWithPassword', () => {
-    it('authenticates caretaker instantly with username_1 / caretaker123', async () => {
+    it('authenticates caretaker via staff email username_1@washwise.app', async () => {
+      const mockUser = { id: 'c1', email: 'username_1@washwise.app', user_metadata: {} };
+      const mockSession = { access_token: 'ctoken', user: mockUser };
+      const mockProfile = {
+        id: 'c1',
+        name: 'Hostel Caretaker',
+        role: 'caretaker',
+        hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
+      };
+
+      (supabase.auth.signInWithPassword as jest.Mock).mockResolvedValueOnce({
+        data: { session: mockSession, user: mockUser },
+        error: null,
+      });
+
+      (supabase.from as jest.Mock).mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValueOnce({ data: mockProfile, error: null }),
+      });
+
       const result = await signInWithPassword('username_1', 'caretaker123');
       expect(result.error).toBeUndefined();
       expect(result.profile?.role).toBe('caretaker');
-      expect(result.profile?.name).toBe('Hostel Caretaker');
-      expect(result.session).toBeTruthy();
+      expect(supabase.auth.signInWithPassword).toHaveBeenCalledWith({
+        email: 'username_1@washwise.app',
+        password: 'caretaker123',
+      });
     });
 
-    it('rejects wrong caretaker password', async () => {
+    it('returns error when credentials are invalid', async () => {
+      (supabase.auth.signInWithPassword as jest.Mock).mockResolvedValueOnce({
+        data: { session: null, user: null },
+        error: { message: 'Invalid login credentials' },
+      });
+
       const result = await signInWithPassword('username_1', 'wrongpass');
-      expect(result.error).toBe('Invalid caretaker password');
+      expect(result.error).toBe('Invalid email/username or password.');
       expect(result.session).toBeNull();
     });
 
-    it('validates student email and password length', async () => {
-      const res1 = await signInWithPassword('invalid-email', '123456');
-      expect(res1.error).toContain('valid email address');
-
-      const res2 = await signInWithPassword('student@college.edu', '123');
-      expect(res2.error).toContain('at least 6 characters');
+    it('validates password length before calling Supabase', async () => {
+      const res = await signInWithPassword('student@college.edu', '123');
+      expect(res.error).toContain('at least 6 characters');
+      expect(supabase.auth.signInWithPassword).not.toHaveBeenCalled();
     });
 
     it('authenticates student via Supabase', async () => {
@@ -223,31 +248,37 @@ describe('Auth Service', () => {
   });
 
   describe('fetchOrCreateProfile', () => {
-    it('creates default student profile if user does not exist in DB', async () => {
-      const mockUser = { id: 'u2', email: 'newstudent@college.edu', user_metadata: {} };
-      const createdProfile = {
-        id: 'u2',
-        name: 'newstudent',
+    it('returns profile from DB if it exists', async () => {
+      const mockUser = { id: 'u1', email: 'student@college.edu', user_metadata: {} };
+      const existingProfile = {
+        id: 'u1',
+        name: 'Student One',
         role: 'student',
-        hostel_block_id: 'a0000000-0000-0000-0000-000000000001',
-        created_at: '',
-        updated_at: '',
+        hostel_block_id: 'block-1',
       };
 
-      (supabase.from as jest.Mock)
-        .mockReturnValueOnce({
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-          maybeSingle: jest.fn().mockResolvedValueOnce({ data: null, error: null }),
-        })
-        .mockReturnValueOnce({
-          insert: jest.fn().mockReturnThis(),
-          select: jest.fn().mockReturnThis(),
-          single: jest.fn().mockResolvedValueOnce({ data: createdProfile, error: null }),
-        });
+      (supabase.from as jest.Mock).mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValueOnce({ data: existingProfile, error: null }),
+      });
 
       const result = await fetchOrCreateProfile(mockUser as never);
-      expect(result.profile).toEqual(createdProfile);
+      expect(result.profile).toEqual(existingProfile);
+    });
+
+    it('returns fallback student profile if user does not exist in DB yet', async () => {
+      const mockUser = { id: 'u2', email: 'newstudent@college.edu', user_metadata: {} };
+
+      (supabase.from as jest.Mock).mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValueOnce({ data: null, error: null }),
+      });
+
+      const result = await fetchOrCreateProfile(mockUser as never);
+      expect(result.profile?.id).toBe('u2');
+      expect(result.profile?.role).toBe('student');
     });
   });
 

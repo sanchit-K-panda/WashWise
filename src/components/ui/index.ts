@@ -4,3 +4,5 @@ export * from './Chip';
 export * from './Screen';
 export * from './Skeleton';
 export * from './ProgressRing';
+export * from './ErrorBanner';
+export * from './Toast';

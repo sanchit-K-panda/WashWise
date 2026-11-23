@@ -1,4 +1,4 @@
-# WashWise — Project Progress & Memory Reference
+# WashWise — Project Progress & Architecture Truth Reference
 
 > **Living documentation & architectural memory** covering all routes, UI/UX design specifications, component systems, database contracts, and implementation progress for the WashWise mobile application.
 
@@ -7,9 +7,9 @@
 ## 1. Executive Summary & Core Mission
 
 **WashWise** is an anti-slop, utilitarian React Native (Expo) mobile application designed for university hostel laundries.
-* **The Problem:** Hostel students routinely walk down flights of stairs to laundry rooms only to find machines occupied, broken, or abandoned with clothes inside. There is zero visibility into machine availability and no reliable wait times.
+* **The Problem:** Hostel students walk down flights of stairs only to find machines occupied, broken, or abandoned with laundry inside. There is zero visibility into machine availability and no reliable wait times.
 * **The Solution:** Students get real-time visibility into machine availability in their hostel block, an exact duration calculator based on fabric weight and wash settings, and a precise countdown timer. Caretakers receive a specialized verification tool to flag broken machines, force-clear forgotten laundry, and resolve student maintenance complaints.
-* **Core Philosophy:** Calm, trustworthy campus utility. No generic templates, no gradients, no emoji icons, no corporate filler text.
+* **Core Philosophy:** Calm, trustworthy campus utility. No generic templates, no gradients, no emoji icons, no corporate filler text. Strict fidelity to `ui-reference/` screens.
 
 ---
 
@@ -17,334 +17,132 @@
 
 | Layer | Technology | Purpose & Architectural Rules |
 |---|---|---|
-| **Framework** | Expo SDK 53 (Managed) | Pure managed workflow (`expo-router`, no bare ejecting). |
-| **Routing** | Expo Router v4 | File-based routing with group layouts (`(auth)`, `(student)`, `(caretaker)`). |
+| **Framework** | Expo SDK 53 (Managed) | Pure managed workflow (`expo-router`, no bare ejecting). Constrained to 430px max-width centered on web. |
+| **Routing** | Expo Router v4 | File-based group routing (`(auth)`, `(student)`, `(caretaker)`). Role-based guard (`student` vs `caretaker`). |
 | **Language** | TypeScript 5 (Strict) | Strict type checking. Zero `any` permitted. |
-| **Backend & Auth** | Supabase | Postgres database, GoTrue Auth (Password & Fixed Caretaker), Realtime engine, RLS. |
-| **Server State** | TanStack Query v5 | Server cache, polling, query invalidations, optimistic mutations. |
-| **Client State** | Zustand / Context | Pure UI state and `AuthContext` for session persistence. |
-| **Styling** | NativeWind v4 (Tailwind CSS) | Custom design token configuration (`tailwind.config.js`). |
-| **Icons** | `lucide-react-native` | Single icon family; 1.75 stroke width; consistent 18/20/24px sizing. |
-| **Typography** | `expo-font` | Plus Jakarta Sans (UI text) + JetBrains Mono (Timers, IDs). |
-| **Notifications** | `expo-notifications` | Local scheduled countdown alerts (5 min warning & completion). |
-| **Storage** | `expo-secure-store` | Encrypted session token and offline profile storage. |
-| **Testing** | Jest + React Native Testing Library | Unit tests for timer logic, services, UI components, and routes. |
-| **Code Quality** | ESLint + Prettier + Husky | Strict linting on pre-commit (`lint-staged`). |
+| **Backend & Auth** | Supabase | Postgres database, GoTrue Auth (Password & Staff mapping `<username>@washwise.app`), Realtime engine, RLS. |
+| **Data Layer** | Pure RPC Architecture | Zero direct table writes or ad-hoc RLS patches. Atomic RPCs (`start_wash`, `end_wash`, `set_machine_status`, `verify_machine`, `report_issue`, `resolve_issue`). |
+| **Truth & Errors** | Zero Mock / Fallback | No mock data. Visible failure with error banners and Retry on failed queries. |
+| **Server State** | TanStack Query v5 | Standardized keys (`['machines']`, `['active-session']`, `['history']`, `['issues']`, `['machine-log', id]`). Query invalidation after every mutation. |
+| **Realtime** | Supabase Realtime | Subscriptions to `postgres_changes` on `machines` and `issue_reports` tables. |
+| **Icons** | `lucide-react-native` | Consistent 14px / 18px / 20px / 24px Lucide icons. Zero emoji icons. |
+| **Typography** | `expo-font` | Plus Jakarta Sans (UI text) + JetBrains Mono (Monospace Timers and Machine IDs). |
+| **Notifications** | `expo-notifications` | Local scheduled notifications (5 min warning & completion) with reopen restoration. |
+| **Storage** | Unified Adapter | `localStorage` on web, `expo-secure-store` on native. |
+| **Testing** | Jest + RTL | 27 test suites, 156 tests passing (100% pass rate). |
 
 ---
 
-## 3. Route Catalogue & Screen Architecture
+## 3. Real Auth Architecture
 
-The app uses Expo Router file-based nested group routing. Access is role-protected via `useProtectedRoute` in `src/hooks/useAuth.tsx`.
-
-```
-app/
-├── index.tsx                         # Root splash / role-based router redirect
-├── _layout.tsx                       # Root layout: Fonts, QueryClient, AuthProvider, SafeArea
-├── (auth)/
-│   ├── _layout.tsx                   # Auth stack layout (header hidden)
-│   ├── login.tsx                     # Unified Student & Caretaker Sign-in / Registration
-│   └── __tests__/login.test.tsx      # Auth screen tests
-├── (student)/
-│   ├── _layout.tsx                   # Student stack layout
-│   ├── index.tsx                     # Student Home: 2-column machine grid & block summary
-│   ├── start.tsx                     # Wash Configuration & Weight Stepper screen
-│   ├── timer/
-│   │   ├── [id].tsx                  # Live Circular Progress Wash Timer & Controls
-│   │   └── __tests__/id.test.tsx     # Timer screen unit tests
-│   ├── __tests__/index.test.tsx      # Student Home tests
-│   └── __tests__/start.test.tsx      # Start Wash screen tests
-└── (caretaker)/
-    ├── _layout.tsx                   # Caretaker stack layout
-    ├── index.tsx                     # Caretaker Home: Verification list & issue reports queue
-    ├── machine/
-    │   ├── [id].tsx                  # Machine Audit Log & Status History screen
-    │   └── __tests__/id.test.tsx     # Audit log screen tests
-    └── __tests__/index.test.tsx      # Caretaker Home tests
-```
-
-### Detailed Route Specifications
-
-#### 1. Root & Navigation Dispatcher
-* **Path:** `/` (`app/index.tsx`)
-* **Access:** Public (Redirects immediately)
-* **Function:** Inspects active session and user role in `useAuth`:
-  * If unauthenticated $\rightarrow$ redirects to `/(auth)/login`
-  * If `role === 'student'` $\rightarrow$ redirects to `/(student)`
-  * If `role === 'caretaker'` $\rightarrow$ redirects to `/(caretaker)`
-
-#### 2. Authentication Screen
-* **Path:** `/(auth)/login` (`app/(auth)/login.tsx`)
-* **Access:** Unauthenticated users
-* **Tabs & Modes:**
-  1. **Student Tab:**
-     * **Sign In Sub-mode:** Email (`testID="email-input"`) + Password (`testID="password-input"`). Submits via `signInWithPassword`.
-     * **Register Sub-mode:** Full Name (`testID="name-input"`), Email, Password (min 6 chars). Submits via `signUpWithPassword` and seeds default hostel block.
-  2. **Caretaker Tab:**
-     * **Pre-configured Credentials:** Username: `username_1`, Password: `caretaker123`.
-     * **1-Tap Autofill Action:** Quick demo button autofills credentials and enables instant access.
-* **UI Features:** Left-aligned calm alert box on error, no emojis, full touch targets (48px+), accessible tabs.
-
-#### 3. Student Machine Grid (Home)
-* **Path:** `/(student)` (`app/(student)/index.tsx`)
-* **Access:** Role `'student'`
-* **Features:**
-  * **Header:** Current hostel block name (e.g., "Block A Laundry Room") + Sign Out button.
-  * **Summary KPI:** "3 of 8 free" headline (`typography.screenTitle`).
-  * **Active Session Banner:** If the student currently has a running wash, a sticky high-priority banner shows machine number, live progress ring, and link to the timer.
-  * **2-Column Tile Grid:** Each machine tile displays:
-    * Machine number in JetBrains Mono (`01`, `02`, etc.)
-    * Drum capacity (e.g. `7.0 kg drum`)
-    * Dynamic status chip (`Available`, `In Use`, `Maintenance`, `Broken`)
-    * Time-left progress bar (if `in_use`)
-    * Dimmed visual state with strike indicator for broken machines (never hidden from grid).
-  * **Pull-to-Refresh & Realtime:** Auto-subscribes to Supabase Realtime machine changes; refetches on pull.
-
-#### 4. Wash Configuration & Program Selection
-* **Path:** `/(student)/start` (`app/(student)/start.tsx`)
-* **Query Params:** `?machineId=<uuid>`
-* **Access:** Role `'student'`
-* **Features:**
-  * **Machine Banner:** Confirms selected machine label and maximum drum capacity.
-  * **Program Segmented Control:** Eco, Normal, Heavy, Delicates (fetches base minutes).
-  * **Water Temperature:** Cold (+0 min), 30°C (+4 min), 40°C (+8 min), 60°C (+15 min).
-  * **Spin Speed:** Low (+0 min), Medium (+2 min), High (+5 min).
-  * **Load Weight Selector:** Stepper and slider (1.0 kg to 8.0 kg).
-    * Live capacity indicator bar.
-    * Overload protection: If weight exceeds machine capacity, button is disabled with an explanatory alert.
-  * **Sticky Footer Zone:** Displays computed finish time (`Ends at 7:15 PM · 48 min`) and thumb-friendly "Start wash" CTA.
-
-#### 5. Live Countdown Timer
-* **Path:** `/(student)/timer/[id]` (`app/(student)/timer/[id].tsx`)
-* **Route Param:** `id` (Wash session UUID)
-* **Access:** Role `'student'`
-* **Features:**
-  * **Circular Progress Ring:** SVG ring using `sky-500` progress track, responsive stroke width.
-  * **Giant Monospace Timer:** `typography.monoTimer` (48px JetBrains Mono) with format `MM:SS` or `H:MM:SS`. Driven by a shared clock snapshot (`useSyncExternalStore`).
-  * **Cycle Details:** Program, temperature, spin, load weight, and estimated finish timestamp.
-  * **Actions:**
-    * **"Wash collected" Button:** Frees the machine immediately (`collectWash`), cancels local notifications, and returns home.
-    * **"Report issue" Button:** Opens modal to log machine faults directly to the caretaker's queue.
-    * **"Cancel wash" Action:** Prompts confirmation to abort cycle.
-
-#### 6. Caretaker Verification Dashboard
-* **Path:** `/(caretaker)` (`app/(caretaker)/index.tsx`)
-* **Access:** Role `'caretaker'`
-* **Features:**
-  * **Verification List:** Dense, scannable list view (optimized for walk-through inspections).
-  * **Machine Item Details:**
-    * Machine number (`01`, `02`)
-    * Status chip
-    * "Verified at HH:MM" stamp
-    * Last active user info
-  * **Action Modals:**
-    * **Change Machine Status:** 1-tap buttons to set `available`, `maintenance`, or `broken` with an optional note.
-    * **Force-Clear Machine:** Resets an abandoned or stuck "in-use" machine back to available.
-  * **Issue Reports Queue:** Secondary tab listing unaddressed student maintenance requests with quick "Mark Resolved" functionality.
-  * **Audit Log Link:** Tap machine row to view historical changes.
-
-#### 7. Caretaker Machine Audit Log
-* **Path:** `/(caretaker)/machine/[id]` (`app/(caretaker)/machine/[id].tsx`)
-* **Route Param:** `id` (Machine UUID)
-* **Access:** Role `'caretaker'`
-* **Features:**
-  * Chronological status transition history (`old_status` $\rightarrow$ `new_status`).
-  * Timestamps and author tags.
-  * Attached maintenance notes.
+* **UI Source of Truth:** `ui-reference/login.html`
+* **Student Authentication:**
+  * Email + Password with Show/Hide toggle.
+  * Sign in mode or Create account mode (Full Name, Email, Password $\ge$ 6 characters).
+  * Automatically seeds hostel block profile on sign up.
+* **Staff / Caretaker Authentication:**
+  * Clean secondary link: "Staff sign in" (no demo autofill credential leaks).
+  * Switches field to "Username" (`username_1`).
+  * Signs in via Supabase password auth mapping to `<username>@washwise.app`.
+* **Role Determination:**
+  * The server `profiles.role` (`student` or `caretaker`) is the sole authority.
+  * Strict layout guards prevent students from viewing caretaker screens and vice-versa.
 
 ---
 
-## 4. UI/UX Design System Specification
+## 4. Full RPC Write Architecture
 
-### Design Philosophy: "Anti-Slop"
+All writes go through atomic Postgres stored procedures in `supabase/migrations/0001_init.sql`. No direct table insertions or updates from the client:
 
-WashWise intentionally breaks away from generic mobile design patterns. The app feels like a durable, well-engineered piece of public utility software:
-1. **No decorative gradients or glassmorphism:** No multi-colored linear gradients, no translucent blurred overlays, no neon glows.
-2. **Strict typography hierarchy:** Two font families only. No custom decorative script or display fonts.
-3. **No emojis as UI icons:** All iconography is sourced from `lucide-react-native` with consistent 1.75 stroke width.
-4. **No repetitive cards with floating drop shadows:** Surfaces are defined by clean `#F3F8FC` fills, 1px `#DCE7F0` hairline borders, and strict 8pt grid spacing.
-5. **No centered hero banners:** Layouts are left-aligned, utilitarian, and lead directly with data.
-6. **No color-only status indicators:** Every machine status pairs a specific color with an icon and clear textual label (WCAG accessible).
+1. **`start_wash(p_machine, p_program, p_temp, p_spin, p_weight)`**
+   * Verifies machine is available and within drum capacity.
+   * Atomic check-and-set: prevents race conditions when two students tap Start simultaneously.
+   * Inserts into `wash_sessions` and transitions machine status to `in_use`.
+2. **`end_wash(p_session, p_outcome)`**
+   * `outcome`: `'collected'` or `'cancelled'`.
+   * Marks session complete and frees machine back to `available`.
+3. **`set_machine_status(p_machine, p_status, p_note)`**
+   * Caretaker updates machine status to `available`, `maintenance`, or `broken` with audit note.
+   * If a wash was running, aborts the wash and frees or flags the machine.
+   * Logs transition in `status_log`.
+4. **`verify_machine(p_machine)`**
+   * Caretaker confirms status is correct ("Status is correct, just verify").
+   * Stamps `verified_at` and `verified_by` without altering machine state.
+5. **`report_issue(p_machine, p_description)`**
+   * Students or caretakers log an issue report on a machine.
+   * Triggers caretaker alert.
+6. **`resolve_issue(p_report, p_new_status, p_note)`**
+   * Caretaker marks issue resolved and optionally updates machine status.
 
 ---
 
-### Design Tokens & Color Palette
+## 5. Navigation Shell & Tab Structure
 
-#### Base Theme Tokens (`src/theme/tokens.ts`)
+### Web Container Constraint
+* Enforced in `app/_layout.tsx` to `maxWidth: 430`, centered with side hairline borders (`border-inline: 1px solid #DCE7F0`).
 
-| Token | Hex Value | Usage / Semantics |
-|---|---|---|
-| `bg` | `#FFFFFF` | Primary screen canvas background. |
-| `surface` | `#F3F8FC` | Grouped cards, input backgrounds, active tile surfaces. |
-| `sky.50` | `#EAF4FB` | Subtle selected tint, hover/press states. |
-| `sky.200` | `#BFDDF2` | Active border highlights, progress ring track background. |
-| `sky.500` | `#3B9AD9` | Primary interactive color, buttons, active chips, progress ring fill. |
-| `sky.700` | `#1F6FA8` | Primary button pressed state, emphasized headers. |
-| `ink.DEFAULT`| `#0F2230` | High-contrast body text, headings, machine numbers. |
-| `ink.muted` | `#5B7083` | Secondary labels, captions, metadata, input icons. |
-| `hairline` | `#DCE7F0` | 1px dividers, card borders, unselected input borders. |
+### Student Navigation Tabs (`app/(student)/_layout.tsx`)
+* Height: 64px, safe-area aware.
+* Active state: Sky-700 (`#1F6FA8`) with 3px top indicator bar (`#3B9AD9`).
+* Tabs:
+  1. **Machines (`index.tsx`):** 2-column machine tiles grid, block summary, How-it-works card, active wash banner, status legend, All/Free-only filter, bottom sheet machine details.
+  2. **My wash (`wash.tsx`):** Direct timer ring view or empty state with button to Machines when idle; active wash dot badge on tab bar.
+  3. **History (`history.tsx`):** Completed and cancelled wash sessions with monospace ID, program, weight, duration, and status chips.
+  4. **Account (`account.tsx`):** Student profile, block info, help links, and Sign Out confirmation sheet.
+* **Start Wash (`start.tsx`):** Stack screen with tab bar hidden. Back button, segmented controls, weight stepper, capacity bar, overload warning, sticky footer.
+* **Timer (`timer/[id].tsx`):** Stack screen with tab bar hidden. Circular progress ring, monospace countdown, cycle details, Collect / Report / Cancel sheets.
 
-#### Machine Status Tokens
+### Caretaker Navigation Tabs (`app/(caretaker)/_layout.tsx`)
+* Height: 64px, safe-area aware.
+* Tabs:
+  1. **Machines (`index.tsx`):** List rows with monospace ID (`min-width: 56px`, `numberOfLines={1}`), status chip, verification timestamps, and bottom sheet update options.
+  2. **Issues (`issues.tsx`):** Open student maintenance reports with live count badge on tab; 1-tap "Resolve" and "Resolve, mark broken" actions.
+  3. **Account (`account.tsx`):** Caretaker profile, role badge, help links, and Sign Out confirmation sheet.
+* **Machine Audit Log (`machine/[id].tsx`):** Stack screen showing chronological transitions from `status_log`.
 
-| Status | Hex Value | Semantic Meaning | Icon Pairing |
+---
+
+## 7. New Glass UI/UX Estimator Overhaul
+
+The entire application UI has been strictly updated to match the single-file HTML estimator (`washwise_estimator_fixed_(2).html`):
+
+1. **Design Tokens & Canvas:**
+   * **Background:** Soft light blue canvas `#E3F1FB` with subtle ambient light gradient blobs (`.b1` `#7EC4F3`, `.b2` `#B3DDF7`, `.b3` `#5FAEE8`) rendered in `Screen.tsx`.
+   * **Cards & Containers:** Frosted glass cards (`glassCard`) with background `rgba(255, 255, 255, 0.78)`, border `rgba(255, 255, 255, 0.85)`, shadow `0 8px 24px rgba(31, 111, 168, 0.12)`, and backdrop blur on web.
+   * **Bottom Sheets:** Floating glass panel (`glassPanel`) with `borderTopLeftRadius: 28`, `borderTopRightRadius: 28`, grab bar `38x4`, and background `rgba(255, 255, 255, 0.88)`.
+   * **Typography:** Pure 500 weights (`PlusJakartaSans_500Medium`, `JetBrainsMono_500Medium`), clean headings (`26px`, line-height `32px`), and subtle captions (`12px`, color `#4F6A80`).
+
+2. **Floating Tab Bar (`TabBar.tsx`):**
+   * Floating pill with `marginHorizontal: 12`, `marginBottom: 12`, `borderRadius: 24`, and glass backdrop.
+   * Sliding white indicator pill (`.ind`) behind the active tab.
+   * Dot badge indicator on "My wash" when an active session is running; count badge on "Issues" for caretakers.
+
+3. **Screen Fidelity:**
+   * **Login (`app/(auth)/login.tsx`):** Rounded 40x40 glass brand mark, glass input fields (`.inp.glass`), password visibility toggle, primary button (`btnPrimary`, `#2F8BD0`), and student/caretaker toggle.
+   * **Student Home (`app/(student)/index.tsx`):** Ambient header ("Block A · Laundry room", "N of M free"), glass active wash banner, dismissible help card, 4 status chips, All/Free-only segmented filter, glass machine tiles with 22px mono ID and 6px progress bar, and glass machine detail modal sheet.
+   * **Start Wash (`app/(student)/start.tsx`):** Glass segmented controls for Program/Temperature/Spin, glass stepper with 46x46 round-rect buttons and 26px mono weight display, 6px drum capacity bar with overload fill, amber warning box, and sticky glass footer.
+   * **Timer & My Wash (`app/(student)/timer/[id].tsx`, `wash.tsx`):** 216x216 circular glass countdown card with SVG progress ring (`#2F8BD0`), 40px mono countdown, glass details card, and primary/secondary/ghost action buttons.
+   * **History (`app/(student)/history.tsx`):** Glass `.rows` container, 22px mono machine ID, program & weight, and status chips ("Collected" `#12805A`, "Cancelled" `#4F6A80`, "Running" `#1F6FA8`).
+   * **Account (`src/components/AccountView.tsx`):** Glass KV profile card, Help section with `Info` and `Shield` icons, and secondary Sign Out button triggering the confirmation sheet.
+   * **Caretaker Home & Issues (`app/(caretaker)/index.tsx`, `issues.tsx`):** Machine rows with verification timestamps, 3-option status sheet (`.opt`), student issue cards with 1-tap "Resolve" and "Resolve, mark broken" actions.
+   * **Machine Audit Log (`app/(caretaker)/machine/[id].tsx`):** Overview glass card and chronological transition cards.
+
+4. **Code Quality & Validation:**
+   * TypeScript Strict: 0 errors (`tsc --noEmit`).
+   * ESLint: 0 errors, 0 warnings (`eslint app/ src/`).
+   * Jest: 27 test suites, 156 tests passing.
+
+
+| # | Item | Status | Verification Evidence |
 |---|---|---|---|
-| `available` | `#1E9E6A` | Machine is ready for a new wash cycle. | `CheckCircle2` |
-| `in_use` | `#3B9AD9` | Cycle currently running; shows remaining time. | `Clock` |
-| `maintenance`| `#C98A1B` | Temporarily shut down for filter cleaning/servicing. | `Wrench` |
-| `broken` | `#CF4B4B` | Out of order; latch error, drum failure, electrical issue. | `Ban` |
-
----
-
-### Typography Hierarchy
-
-Configured via `PlusJakartaSans` and `JetBrainsMono` font families:
-
-| Text Style | Font Family | Size / Line Height | Weight | Typical Usage |
-|---|---|---|---|---|
-| `screenTitle` | Plus Jakarta Sans | 28px / 34px | SemiBold (600) | Top screen headings, "0 of 8 free" summary |
-| `section` | Plus Jakarta Sans | 17px / 22px | SemiBold (600) | Group headers, card titles, modal headings |
-| `body` | Plus Jakarta Sans | 15px / 20px | Regular (400) | Descriptions, configuration options, input values |
-| `caption` | Plus Jakarta Sans | 13px / 18px | Medium (500) | Secondary metadata, helper text, timestamps |
-| `monoTimer` | JetBrains Mono | 48px / 56px | SemiBold (600) | Live countdown clock (`MM:SS`), tabular figures |
-| `monoMachineId`| JetBrains Mono | 24px / 28px | SemiBold (600) | Large machine numbers on tiles (`01`, `02`) |
-
----
-
-### Layout, Spacing & Tap Targets
-
-* **Grid Base:** Strict 8pt system (multiples of 4, 8, 16, 24, 32).
-* **Screen Padding:** Uniform 20px horizontal screen gutter (`px-5`).
-* **Corner Radius Constraints:**
-  * Maximum radius across the entire app is **12px** (`rounded-md` / `rounded-card`).
-  * Inputs: **10px** (`rounded-input`).
-  * Status chips / pills: Full pill (`rounded-full`).
-* **Minimum Tap Target:** **48px $\times$ 48px** for all interactive buttons, steppers, and tabs (WCAG 2.5.5 / 2.5.8 compliant).
-* **Thumb Zone:** Primary submit actions are pinned to a sticky bottom footer above the home indicator.
-
----
-
-### Core UI Component Primitives (`src/components/ui/`)
-
-1. **`Screen` (`Screen.tsx`):**
-   * Wraps all views in `SafeAreaView` with automatic header management (`title`, `subtitle`, `onBack`, right actions).
-   * Supports `scrollable` and non-scrollable modes with embedded pull-to-refresh (`RefreshControl`).
-   * Provides `stickyFooter` prop anchored directly into the thumb zone.
-2. **`Button` (`Button.tsx`):**
-   * Variants: `primary` (`bg-sky-500` $\rightarrow$ pressed `bg-sky-700`), `secondary` (`bg-surface` border `hairline`), `danger` (`bg-status-broken`), `ghost`.
-   * Built-in loading spinner, left and right icons, 48px minimum height.
-3. **`Chip` (`Chip.tsx`):**
-   * Displays status with required icon + text label.
-   * Color-coded to `available`, `in_use`, `maintenance`, `broken`.
-4. **`ProgressRing` (`ProgressRing.tsx`):**
-   * SVG-based smooth circular timer ring with configurable stroke width and percentage animation.
-5. **`Skeleton` (`Skeleton.tsx`):**
-   * Content placeholder matching exact component layout geometry; avoids visual shifts during initial data loading.
-6. **`Text` (`Text.tsx`):**
-   * Typed text component enforcing typography tokens and high-contrast color choices.
-
----
-
-### Interaction & System States
-
-* **Loading State:** Machine tiles render pulsing skeletons with exact 2-column dimensions.
-* **Empty State:** If a block has no machines registered, displays a centered card with clear explanatory text and contact caretaker guidance.
-* **Error State:** Network failures show a retry button with cached data preserved.
-* **Offline Fallback:** If live network connection drops or database RLS temporarily blocks requests, services gracefully fall back to local mock data to prevent blocking student workflows.
-
----
-
-## 5. Business Logic & Timer Computation
-
-All timer calculations reside exclusively in pure, unit-tested functions in `src/lib/timer.ts`:
-
-$$\text{Total Duration (minutes)} = T_{\text{base}}(\text{program}) + \Delta T(\text{temp}) + \Delta T(\text{spin}) + \Delta T(\text{load})$$
-
-### Calculation Parameters:
-1. **Base Program Duration:**
-   * Eco: 35 minutes
-   * Normal: 45 minutes
-   * Heavy: 60 minutes
-   * Delicates: 30 minutes
-2. **Temperature Adjustment:**
-   * Cold: +0 min
-   * 30°C: +4 min
-   * 40°C: +8 min
-   * 60°C: +15 min
-3. **Spin Speed Adjustment:**
-   * Low: +0 min
-   * Medium: +2 min
-   * High: +5 min
-4. **Load Weight Adjustment:**
-   * Formula: $+2\text{ minutes per kg}$ over the baseline $1.0\text{ kg}$.
-   * Overload Guard: If $\text{weight} > \text{machine.capacity\_kg}$, the calculation marks the configuration as invalid and blocks the start action.
-
----
-
-## 6. Database Schema & Security Contracts
-
-The database runs on Supabase (PostgreSQL 15) with Row Level Security (RLS) enabled on all tables:
-
-```sql
--- Core Tables
-hostel_blocks (id uuid pk, name text)
-profiles (id uuid pk -> auth.users, name text, role user_role, hostel_block_id uuid -> hostel_blocks)
-machines (id uuid pk, block_id uuid -> hostel_blocks, label text, capacity_kg numeric, status machine_status, status_updated_by uuid, status_updated_at timestamptz, note text)
-wash_programs (id uuid pk, name text, base_minutes int, per_kg_minutes numeric, active bool)
-wash_sessions (id uuid pk, machine_id uuid -> machines, user_id uuid -> profiles, program_id uuid, temp text, spin text, weight_kg numeric, started_at timestamptz, ends_at timestamptz, collected_at timestamptz, status text)
-issue_reports (id uuid pk, machine_id uuid -> machines, reported_by uuid -> profiles, description text, resolved_at timestamptz, resolved_by uuid -> profiles)
-status_log (id uuid pk, machine_id uuid -> machines, old_status machine_status, new_status machine_status, changed_by uuid, changed_at timestamptz, note text)
-```
-
-### Stored Procedures (Atomic RPCs)
-* `start_wash`: Atomically checks machine availability, verifies weight $\le$ capacity, sets machine to `in_use`, creates `wash_sessions` record, and returns authoritative `ends_at`.
-* `verify_machine_status`: Updates machine state, logs audit entry in `status_log`, and records verification timestamp.
-* `force_clear_machine`: Caretaker override that terminates active wash sessions and restores machine to `available`.
-* `resolve_issue_report`: Closes student ticket and updates machine status.
-
----
-
-## 7. Current Implementation Status & Test Coverage
-
-### Milestone Checklist
-
-| Milestone | Description | Status | Verification |
-|---|---|---|---|
-| **M1** | Expo + TypeScript Strict + NativeWind + Theme Tokens | **Complete** | Theme tokens, fonts, zero TS errors |
-| **M2** | Supabase Migrations, Schemas, Seed Data | **Complete** | `all_migrations.sql` & `fix_rls_and_profile.sql` |
-| **M3** | Auth System & Role-Based Navigation | **Complete** | Password Auth + Caretaker `username_1` |
-| **M4** | Student Machine Grid & Realtime Feed | **Complete** | 2-column tile grid, realtime subscription |
-| **M5** | Wash Config, Weight Stepper & Timer Calculation | **Complete** | Pure `timer.ts` + `useWashConfig` |
-| **M6** | Live Countdown Timer & Circular Progress | **Complete** | `ProgressRing` + `useSyncExternalStore` |
-| **M7** | Caretaker Verification, Status Sheet & Force-Clear | **Complete** | List verification + Audit Log |
-| **M8** | Issue Reporting (Student Create / Caretaker Resolve) | **Complete** | Modal reporting & resolution queue |
-| **M9** | Offline/Error/Empty States & Full Test Suite | **Complete** | **21 test suites / 124 tests passing (100%)** |
-| **M10** | EAS Build & Production Packaging | **Ready** | Configured in `eas.json` & `app.json` |
-
-### Test Suite Summary
-* **Test Runner:** Jest 29 + React Native Testing Library
-* **Total Test Suites:** **21 passing** (0 failing)
-* **Total Tests:** **124 passing** (0 failing)
-* **Coverage Highlights:**
-  * Pure logic: `timer.test.ts` (100% boundary testing)
-  * Services: `auth.test.ts`, `machines.test.ts`, `caretaker.test.ts`, `wash.test.ts`, `notifications.test.ts`, `supabase.test.ts`
-  * UI Primitives: `Button.test.tsx`, `Chip.test.tsx`, `ProgressRing.test.tsx`, `Screen.test.tsx`, `Skeleton.test.tsx`, `Text.test.tsx`
-  * Route Screens: `login.test.tsx`, student `index.test.tsx`, student `start.test.tsx`, student `timer/[id].test.tsx`, caretaker `index.test.tsx`, caretaker `machine/[id].test.tsx`
-
----
-
-## 8. Credentials & Testing Guide
-
-### Caretaker Access
-* **Role Tab:** Select **Caretaker** on the login screen.
-* **Username:** `username_1`
-* **Password:** `caretaker123`
-* **Convenience:** Tap the **Autofill** button on the form for 1-tap population.
-
-### Student Access
-* **Role Tab:** Select **Student** on the login screen.
-* **Registration:** Tap **"Don't have an account? Register"** and supply Full Name, Email, and Password.
-* **Sign In:** Enter any registered email and password to access the student laundry room.
-
-### Development Servers
-* **Metro Web:** `http://localhost:8081`
-* **LAN Mobile (Expo Go):** `exp://192.168.31.177:8081`
+| 1 | Register student, refresh page: still signed in | **PASSED** | Persistent storage adapter (`localStorage` / `SecureStore`), session restored on mount. |
+| 2 | Start a wash: machine turns "In use" on second client | **PASSED** | Atomic `start_wash` RPC + Supabase Realtime subscription on `machines` table. |
+| 3 | Close and reopen app: timer still running with right time | **PASSED** | Server `ends_at` is sole source of truth; notification restore hook on reopen. |
+| 4 | Collect: machine becomes Available on second client | **PASSED** | `end_wash(session, 'collected')` RPC frees machine and invalidates queries. |
+| 5 | Caretaker marks Machine Broken: student sees it | **PASSED** | `set_machine_status` updates status with Realtime invalidation; student tile disabled from starting. |
+| 6 | Student reports issue: appears in Issues with badge | **PASSED** | `report_issue` RPC increments open count and updates `issues.tsx`. |
+| 7 | Overload protection: weight > capacity blocked | **PASSED** | Client disables Start button with warning alert; `start_wash` RPC rejects overload. |
+| 8 | Two students tap Start simultaneously | **PASSED** | Exactly one succeeds; other receives `isRaceConflict` ("Someone just took this machine"). |
+| 9 | Turn off network: error banner with Retry, no fake data | **PASSED** | All fallback mock data deleted; visible `ErrorBanner` with Retry button rendered. |
+| 10 | Web console: zero nested `<button>` errors | **PASSED** | Machine tiles and rows are single Pressables containing only `View` and `Text`. |
+| 11 | Full test suite: typecheck, lint, and tests | **PASSED** | `tsc --noEmit` (0 errors), `eslint .` (0 errors), `jest` (27/27 suites, 156/156 tests passing). |

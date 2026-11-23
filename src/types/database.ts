@@ -1,8 +1,8 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-export type MachineStatus = 'available' | 'in_use' | 'broken' | 'maintenance';
+export type MachineStatus = 'available' | 'in_use' | 'maintenance' | 'broken';
 export type UserRole = 'student' | 'caretaker';
-export type WashSessionStatus = 'running' | 'done' | 'collected' | 'cancelled';
+export type WashSessionStatus = 'running' | 'collected' | 'cancelled';
 
 export interface Database {
   public: {
@@ -11,17 +11,14 @@ export interface Database {
         Row: {
           id: string;
           name: string;
-          created_at: string;
         };
         Insert: {
           id?: string;
           name: string;
-          created_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
-          created_at?: string;
         };
         Relationships: [];
       };
@@ -31,24 +28,18 @@ export interface Database {
           name: string;
           role: UserRole;
           hostel_block_id: string | null;
-          created_at: string;
-          updated_at: string;
         };
         Insert: {
           id: string;
-          name: string;
+          name?: string;
           role?: UserRole;
           hostel_block_id?: string | null;
-          created_at?: string;
-          updated_at?: string;
         };
         Update: {
           id?: string;
           name?: string;
           role?: UserRole;
           hostel_block_id?: string | null;
-          created_at?: string;
-          updated_at?: string;
         };
         Relationships: [
           {
@@ -69,8 +60,9 @@ export interface Database {
           status: MachineStatus;
           status_updated_by: string | null;
           status_updated_at: string;
+          verified_at: string | null;
+          verified_by: string | null;
           note: string | null;
-          created_at: string;
         };
         Insert: {
           id?: string;
@@ -80,8 +72,9 @@ export interface Database {
           status?: MachineStatus;
           status_updated_by?: string | null;
           status_updated_at?: string;
+          verified_at?: string | null;
+          verified_by?: string | null;
           note?: string | null;
-          created_at?: string;
         };
         Update: {
           id?: string;
@@ -91,8 +84,9 @@ export interface Database {
           status?: MachineStatus;
           status_updated_by?: string | null;
           status_updated_at?: string;
+          verified_at?: string | null;
+          verified_by?: string | null;
           note?: string | null;
-          created_at?: string;
         };
         Relationships: [
           {
@@ -113,10 +107,10 @@ export interface Database {
           active: boolean;
         };
         Insert: {
-          id: string;
+          id?: string;
           name: string;
           base_minutes: number;
-          per_kg_minutes: number;
+          per_kg_minutes?: number;
           active?: boolean;
         };
         Update: {
@@ -213,20 +207,6 @@ export interface Database {
             referencedRelation: 'wash_programs';
             referencedColumns: ['id'];
           },
-          {
-            foreignKeyName: 'wash_sessions_temp_fkey';
-            columns: ['temp'];
-            isOneToOne: false;
-            referencedRelation: 'temp_adjustments';
-            referencedColumns: ['temp'];
-          },
-          {
-            foreignKeyName: 'wash_sessions_spin_fkey';
-            columns: ['spin'];
-            isOneToOne: false;
-            referencedRelation: 'spin_adjustments';
-            referencedColumns: ['spin'];
-          },
         ];
       };
       issue_reports: {
@@ -271,26 +251,29 @@ export interface Database {
         Row: {
           id: string;
           machine_id: string;
-          old_status: MachineStatus;
+          old_status: MachineStatus | null;
           new_status: MachineStatus;
           changed_by: string | null;
           changed_at: string;
+          note: string | null;
         };
         Insert: {
           id?: string;
           machine_id: string;
-          old_status: MachineStatus;
+          old_status?: MachineStatus | null;
           new_status: MachineStatus;
           changed_by?: string | null;
           changed_at?: string;
+          note?: string | null;
         };
         Update: {
           id?: string;
           machine_id?: string;
-          old_status?: MachineStatus;
+          old_status?: MachineStatus | null;
           new_status?: MachineStatus;
           changed_by?: string | null;
           changed_at?: string;
+          note?: string | null;
         };
         Relationships: [
           {
@@ -304,87 +287,147 @@ export interface Database {
       };
     };
     Views: {
-      [_ in never]: never;
+      machine_board: {
+        Row: {
+          id: string;
+          block_id: string;
+          label: string;
+          capacity_kg: number;
+          status: MachineStatus;
+          note: string | null;
+          verified_at: string | null;
+          status_updated_at: string;
+          started_at: string | null;
+          ends_at: string | null;
+          is_finished: boolean | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       start_wash: {
         Args: {
-          p_machine_id: string;
-          p_program_id: string;
+          p_machine: string;
+          p_program: string;
           p_temp: string;
           p_spin: string;
-          p_weight_kg: number;
+          p_weight: number;
         };
         Returns: {
-          session_id: string;
+          id: string;
           machine_id: string;
-          machine_label: string;
-          program_name: string;
-          duration_minutes: number;
+          user_id: string;
+          program_id: string;
+          temp: string;
+          spin: string;
+          weight_kg: number;
           started_at: string;
           ends_at: string;
-          status: string;
+          collected_at: string | null;
+          status: WashSessionStatus;
         };
       };
-      expire_wash_sessions: {
-        Args: Record<PropertyKey, never>;
-        Returns: number;
-      };
-      collect_wash: {
+      end_wash: {
         Args: {
-          p_session_id: string;
+          p_session: string;
+          p_outcome: string;
         };
         Returns: {
-          success: boolean;
-          session_id: string;
+          id: string;
           machine_id: string;
-          collected_at: string;
+          user_id: string;
+          program_id: string;
+          temp: string;
+          spin: string;
+          weight_kg: number;
+          started_at: string;
+          ends_at: string;
+          collected_at: string | null;
+          status: WashSessionStatus;
         };
       };
-      verify_machine_status: {
+      set_machine_status: {
         Args: {
-          p_machine_id: string;
+          p_machine: string;
           p_status: MachineStatus;
           p_note?: string | null;
         };
         Returns: {
-          success: boolean;
-          machine_id: string;
+          id: string;
+          block_id: string;
+          label: string;
+          capacity_kg: number;
           status: MachineStatus;
-          note?: string | null;
-          verified_at: string;
+          status_updated_by: string | null;
+          status_updated_at: string;
+          verified_at: string | null;
+          verified_by: string | null;
+          note: string | null;
         };
       };
-      force_clear_machine: {
+      verify_machine: {
         Args: {
-          p_machine_id: string;
-          p_reason?: string;
+          p_machine: string;
         };
         Returns: {
-          success: boolean;
-          machine_id: string;
-          status: string;
-          cleared_at: string;
+          id: string;
+          block_id: string;
+          label: string;
+          capacity_kg: number;
+          status: MachineStatus;
+          status_updated_by: string | null;
+          status_updated_at: string;
+          verified_at: string | null;
+          verified_by: string | null;
+          note: string | null;
         };
       };
-      resolve_issue_report: {
+      report_issue: {
         Args: {
-          p_issue_id: string;
-          p_machine_status?: MachineStatus | null;
-          p_status_note?: string | null;
+          p_machine: string;
+          p_description: string;
         };
         Returns: {
-          success: boolean;
-          issue_id: string;
-          resolved_at: string;
+          id: string;
           machine_id: string;
-          machine_status?: MachineStatus | null;
+          reported_by: string;
+          description: string;
+          created_at: string;
+          resolved_at: string | null;
+          resolved_by: string | null;
         };
+      };
+      resolve_issue: {
+        Args: {
+          p_report: string;
+          p_new_status?: MachineStatus | null;
+          p_note?: string | null;
+        };
+        Returns: {
+          id: string;
+          machine_id: string;
+          reported_by: string;
+          description: string;
+          created_at: string;
+          resolved_at: string | null;
+          resolved_by: string | null;
+        };
+      };
+      is_caretaker: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
+      my_block: {
+        Args: Record<PropertyKey, never>;
+        Returns: string | null;
       };
     };
     Enums: {
       machine_status: MachineStatus;
       user_role: UserRole;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }
@@ -395,3 +438,5 @@ export type TablesInsert<T extends keyof Database['public']['Tables']> =
   Database['public']['Tables'][T]['Insert'];
 export type TablesUpdate<T extends keyof Database['public']['Tables']> =
   Database['public']['Tables'][T]['Update'];
+export type Views<T extends keyof Database['public']['Views']> =
+  Database['public']['Views'][T]['Row'];

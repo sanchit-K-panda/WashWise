@@ -1,37 +1,16 @@
-import { supabase, isPlaceholderSupabase } from './supabase';
+import { supabase } from './supabase';
 import { sendCaretakerIssueAlert } from './notifications';
-import { MOCK_MACHINES } from './machines';
+import { mapRpcError } from '@/lib/errors';
 import {
   Machine,
   WashConfig,
   WashProgram,
   TempAdjustment,
   SpinAdjustment,
+  WashSession,
   StartWashParams,
   StartWashResponse,
-  StartWashResultPayload,
 } from '@/types';
-
-export const FALLBACK_PROGRAMS: WashProgram[] = [
-  { id: 'normal', name: 'Normal', base_minutes: 35, per_kg_minutes: 2.0, active: true },
-  { id: 'quick', name: 'Quick', base_minutes: 20, per_kg_minutes: 1.0, active: true },
-  { id: 'heavy', name: 'Heavy', base_minutes: 45, per_kg_minutes: 3.0, active: true },
-  { id: 'delicates', name: 'Delicates', base_minutes: 30, per_kg_minutes: 1.5, active: true },
-  { id: 'wool', name: 'Wool', base_minutes: 35, per_kg_minutes: 1.5, active: true },
-];
-
-export const FALLBACK_TEMPS: TempAdjustment[] = [
-  { temp: 'Cold', minutes: 0 },
-  { temp: '30', minutes: 3 },
-  { temp: '40', minutes: 5 },
-  { temp: '60', minutes: 8 },
-];
-
-export const FALLBACK_SPINS: SpinAdjustment[] = [
-  { spin: 'Low', minutes: 0 },
-  { spin: 'Medium', minutes: 2 },
-  { spin: 'High', minutes: 4 },
-];
 
 export interface WashSessionDetails {
   id: string;
@@ -44,173 +23,113 @@ export interface WashSessionDetails {
   started_at: string;
   ends_at: string;
   collected_at: string | null;
-  status: 'running' | 'done' | 'collected' | 'cancelled';
+  status: 'running' | 'collected' | 'cancelled';
   machine?: Machine | null;
   program?: WashProgram | null;
 }
 
 /**
- * Fetches machine by ID.
+ * Fetches machine by ID from the machines table.
+ * Throws visibly on error.
  */
 export async function fetchMachineById(machineId: string): Promise<Machine | null> {
-  if (isPlaceholderSupabase) {
-    const match = MOCK_MACHINES.find((m) => m.id === machineId);
-    return (match as Machine) || null;
-  }
-  try {
-    const { data, error } = await supabase
-      .from('machines')
-      .select('*')
-      .eq('id', machineId)
-      .maybeSingle();
+  const { data, error } = await supabase
+    .from('machines')
+    .select('*')
+    .eq('id', machineId)
+    .maybeSingle();
 
-    if (error || !data) {
-      if (process.env.NODE_ENV !== 'test') {
-        const match = MOCK_MACHINES.find((m) => m.id === machineId);
-        return (match as Machine) || null;
-      }
-      return null;
-    }
-    return data as Machine;
-  } catch {
-    if (process.env.NODE_ENV !== 'test') {
-      const match = MOCK_MACHINES.find((m) => m.id === machineId);
-      return (match as Machine) || null;
-    }
-    return null;
+  if (error) {
+    throw new Error(error.message || 'Failed to fetch machine');
   }
+  return data as Machine | null;
 }
 
 /**
- * Fetches wash programs, temperature adjustments, and spin speed adjustments.
+ * Fetches active wash programs, temperature adjustments, and spin speed adjustments.
+ * Throws visibly on error — no mock or fallback data.
  */
 export async function fetchWashConfig(): Promise<WashConfig> {
-  try {
-    const [progRes, tempRes, spinRes] = await Promise.all([
-      supabase.from('wash_programs').select('*').eq('active', true),
-      supabase.from('temp_adjustments').select('*'),
-      supabase.from('spin_adjustments').select('*'),
-    ]);
+  const [progRes, tempRes, spinRes] = await Promise.all([
+    supabase.from('wash_programs').select('*').eq('active', true).order('name'),
+    supabase.from('temp_adjustments').select('*').order('minutes'),
+    supabase.from('spin_adjustments').select('*').order('minutes'),
+  ]);
 
-    const programs =
-      progRes.data && progRes.data.length > 0 ? (progRes.data as WashProgram[]) : FALLBACK_PROGRAMS;
-
-    const tempAdjustments =
-      tempRes.data && tempRes.data.length > 0 ? (tempRes.data as TempAdjustment[]) : FALLBACK_TEMPS;
-
-    const spinAdjustments =
-      spinRes.data && spinRes.data.length > 0 ? (spinRes.data as SpinAdjustment[]) : FALLBACK_SPINS;
-
-    return { programs, tempAdjustments, spinAdjustments };
-  } catch {
-    return {
-      programs: FALLBACK_PROGRAMS,
-      tempAdjustments: FALLBACK_TEMPS,
-      spinAdjustments: FALLBACK_SPINS,
-    };
+  if (progRes.error) {
+    throw new Error(progRes.error.message || 'Failed to fetch wash programs');
   }
+  if (tempRes.error) {
+    throw new Error(tempRes.error.message || 'Failed to fetch temp adjustments');
+  }
+  if (spinRes.error) {
+    throw new Error(spinRes.error.message || 'Failed to fetch spin adjustments');
+  }
+
+  return {
+    programs: (progRes.data || []) as WashProgram[],
+    tempAdjustments: (tempRes.data || []) as TempAdjustment[],
+    spinAdjustments: (spinRes.data || []) as SpinAdjustment[],
+  };
 }
 
 /**
  * Invokes the atomic start_wash RPC on Supabase.
- * Handles race condition when machine status changed before start.
+ * Checks error and throws or maps standard RPC error codes.
  */
 export async function startWash(params: StartWashParams): Promise<StartWashResponse> {
-  if (isPlaceholderSupabase) {
-    const endsAt = new Date(Date.now() + 45 * 60 * 1000).toISOString();
-    return {
-      success: true,
-      session: {
-        session_id: 'ws-demo-1',
-        machine_id: params.machineId,
-        machine_label: 'Machine 01',
-        program_name: 'Normal',
-        duration_minutes: 45,
-        started_at: new Date().toISOString(),
-        ends_at: endsAt,
-        status: 'running',
-      },
-    };
-  }
-  try {
-    const { data, error } = await supabase.rpc('start_wash', {
-      p_machine_id: params.machineId,
-      p_program_id: params.programId,
-      p_temp: params.temp,
-      p_spin: params.spin,
-      p_weight_kg: params.weightKg,
-    });
+  const { data, error } = await supabase.rpc('start_wash', {
+    p_machine: params.machineId,
+    p_program: params.programId,
+    p_temp: params.temp,
+    p_spin: params.spin,
+    p_weight: params.weightKg,
+  });
 
-    if (error) {
-      const msg = error.message || '';
-      const code = (error as { code?: string }).code || '';
-
-      const isRaceConflict =
-        code === 'WW001' ||
-        msg.toLowerCase().includes('not available') ||
-        msg.toLowerCase().includes('occupied');
-
-      if (isRaceConflict) {
-        return {
-          success: false,
-          isRaceConflict: true,
-          error: 'This machine was just taken by someone else.',
-        };
-      }
-
-      const isOverload = code === 'WW002' || msg.toLowerCase().includes('exceeds machine capacity');
-      if (isOverload) {
-        return {
-          success: false,
-          error: 'Load weight exceeds machine capacity.',
-        };
-      }
-
-      return {
-        success: false,
-        error: msg || 'Failed to start wash cycle.',
-      };
-    }
-
-    return {
-      success: true,
-      session: data as unknown as StartWashResultPayload,
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Failed to start wash cycle';
+  if (error) {
+    const friendlyError = mapRpcError(error, 'Failed to start wash cycle.');
+    const rawMsg = error.message || '';
     return {
       success: false,
-      error: msg,
+      isRaceConflict: rawMsg.includes('machine_unavailable') || rawMsg.includes('not available'),
+      error: friendlyError,
     };
   }
+
+  return {
+    success: true,
+    session: data as WashSession,
+  };
 }
 
 /**
- * Marks a wash session as collected and frees the machine via RPC collect_wash.
+ * Ends a wash session via atomic RPC end_wash with outcome 'collected' | 'cancelled'.
+ * All writes go through the RPC; no direct table writes.
+ */
+export async function endWash(
+  sessionId: string,
+  outcome: 'collected' | 'cancelled'
+): Promise<WashSession> {
+  const { data, error } = await supabase.rpc('end_wash', {
+    p_session: sessionId,
+    p_outcome: outcome,
+  });
+
+  if (error) {
+    throw new Error(mapRpcError(error, `Failed to end wash session as ${outcome}`));
+  }
+
+  return data as WashSession;
+}
+
+/**
+ * Marks a wash session as collected via RPC end_wash.
  */
 export async function collectWash(
   sessionId: string
 ): Promise<{ success: boolean; error?: string }> {
-  if (isPlaceholderSupabase) {
-    return { success: true };
-  }
   try {
-    const { error } = await supabase.rpc('collect_wash', {
-      p_session_id: sessionId,
-    });
-
-    if (error) {
-      // Fallback: direct update in case RPC is not yet created in local test env
-      const { error: sessionError } = await supabase
-        .from('wash_sessions')
-        .update({ status: 'collected', collected_at: new Date().toISOString() })
-        .eq('id', sessionId);
-
-      if (sessionError) {
-        return { success: false, error: sessionError.message };
-      }
-    }
-
+    await endWash(sessionId, 'collected');
     return { success: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to collect wash';
@@ -219,7 +138,21 @@ export async function collectWash(
 }
 
 /**
- * Submits an issue report for a machine and notifies caretakers.
+ * Cancels a wash session via RPC end_wash.
+ */
+export async function cancelWash(sessionId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await endWash(sessionId, 'cancelled');
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to cancel wash';
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Submits an issue report for a machine via atomic RPC report_issue.
+ * No direct table insert.
  */
 export async function reportMachineIssue(
   machineId: string,
@@ -227,24 +160,23 @@ export async function reportMachineIssue(
   machineLabel?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
-      return { success: false, error: 'User must be signed in to report an issue' };
+    const trimmed = description.trim();
+    if (!trimmed || trimmed.length < 3) {
+      return { success: false, error: 'Please enter at least 3 characters for description' };
     }
 
-    const { error } = await supabase.from('issue_reports').insert({
-      machine_id: machineId,
-      reported_by: userData.user.id,
-      description: description.trim(),
+    const { error } = await supabase.rpc('report_issue', {
+      p_machine: machineId,
+      p_description: trimmed,
     });
 
     if (error) {
       return { success: false, error: error.message };
     }
 
-    // Trigger push notification to caretaker
-    const label = machineLabel || '01';
-    sendCaretakerIssueAlert(label, description.trim()).catch(() => {});
+    if (machineLabel) {
+      sendCaretakerIssueAlert(machineLabel, trimmed).catch(() => {});
+    }
 
     return { success: true };
   } catch (err) {
@@ -254,77 +186,117 @@ export async function reportMachineIssue(
 }
 
 /**
- * Fetches the active running or done wash session for a user to restore on app restart.
+ * Fetches the active running wash session for a user from the server.
+ * Source of truth: wash_sessions where status='running' and user_id=me.
  */
 export async function fetchActiveUserSession(userId: string): Promise<WashSessionDetails | null> {
-  try {
-    const { data: session, error } = await supabase
-      .from('wash_sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .in('status', ['running', 'done'])
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  const { data: session, error } = await supabase
+    .from('wash_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'running')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-    if (error || !session) return null;
-
-    const [machineRes, progRes] = await Promise.all([
-      supabase.from('machines').select('*').eq('id', session.machine_id).maybeSingle(),
-      supabase.from('wash_programs').select('*').eq('id', session.program_id).maybeSingle(),
-    ]);
-
-    return {
-      ...session,
-      machine: machineRes.data as Machine | null,
-      program: progRes.data as WashProgram | null,
-    };
-  } catch {
-    return null;
+  if (error) {
+    throw new Error(error.message || 'Failed to fetch active wash session');
   }
+  if (!session) return null;
+
+  const [machineRes, progRes] = await Promise.all([
+    supabase.from('machines').select('*').eq('id', session.machine_id).maybeSingle(),
+    supabase.from('wash_programs').select('*').eq('id', session.program_id).maybeSingle(),
+  ]);
+
+  if (machineRes.error) throw new Error(machineRes.error.message);
+  if (progRes.error) throw new Error(progRes.error.message);
+
+  return {
+    ...session,
+    machine: machineRes.data as Machine | null,
+    program: progRes.data as WashProgram | null,
+  };
 }
 
 /**
- * Fetches full details for a session by session ID (or machine ID fallback).
+ * Fetches full details for a session by session ID.
  */
 export async function fetchSessionDetails(
   sessionIdOrMachineId: string
 ): Promise<WashSessionDetails | null> {
-  try {
-    // 1. Try by session ID
-    let { data: session } = await supabase
+  let { data: session, error } = await supabase
+    .from('wash_sessions')
+    .select('*')
+    .eq('id', sessionIdOrMachineId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message || 'Failed to fetch session details');
+  }
+
+  // Fallback by machine ID for active running session
+  if (!session) {
+    const res = await supabase
       .from('wash_sessions')
       .select('*')
-      .eq('id', sessionIdOrMachineId)
+      .eq('machine_id', sessionIdOrMachineId)
+      .eq('status', 'running')
+      .order('started_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    // 2. If not found by session ID, try by machine ID for latest active session
-    if (!session) {
-      const res = await supabase
-        .from('wash_sessions')
-        .select('*')
-        .eq('machine_id', sessionIdOrMachineId)
-        .in('status', ['running', 'done'])
-        .order('started_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      session = res.data;
-    }
-
-    if (!session) return null;
-
-    const [machineRes, progRes] = await Promise.all([
-      supabase.from('machines').select('*').eq('id', session.machine_id).maybeSingle(),
-      supabase.from('wash_programs').select('*').eq('id', session.program_id).maybeSingle(),
-    ]);
-
-    return {
-      ...session,
-      machine: machineRes.data as Machine | null,
-      program: progRes.data as WashProgram | null,
-    };
-  } catch {
-    return null;
+    if (res.error) throw new Error(res.error.message);
+    session = res.data;
   }
+
+  if (!session) return null;
+
+  const [machineRes, progRes] = await Promise.all([
+    supabase.from('machines').select('*').eq('id', session.machine_id).maybeSingle(),
+    supabase.from('wash_programs').select('*').eq('id', session.program_id).maybeSingle(),
+  ]);
+
+  if (machineRes.error) throw new Error(machineRes.error.message);
+  if (progRes.error) throw new Error(progRes.error.message);
+
+  return {
+    ...session,
+    machine: machineRes.data as Machine | null,
+    program: progRes.data as WashProgram | null,
+  };
+}
+
+/**
+ * Fetches completed/past wash history for a user.
+ */
+export async function fetchUserHistory(userId?: string): Promise<WashSessionDetails[]> {
+  let query = supabase
+    .from('wash_sessions')
+    .select('*')
+    .in('status', ['collected', 'cancelled'])
+    .order('started_at', { ascending: false });
+
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(mapRpcError(error, 'Failed to fetch wash history'));
+  }
+
+  const [machinesRes, progsRes] = await Promise.all([
+    supabase.from('machines').select('*'),
+    supabase.from('wash_programs').select('*'),
+  ]);
+
+  const machinesMap = new Map((machinesRes.data || []).map((m) => [m.id, m]));
+  const progsMap = new Map((progsRes.data || []).map((p) => [p.id, p]));
+
+  return (data || []).map((s) => ({
+    ...s,
+    machine: (machinesMap.get(s.machine_id) as Machine) || null,
+    program: (progsMap.get(s.program_id) as WashProgram) || null,
+  }));
 }

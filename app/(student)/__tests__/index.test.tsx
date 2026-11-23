@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, fireEvent, act } from '@testing-library/react-native';
+import { render, fireEvent, act, cleanup } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import StudentHomeScreen from '../index';
 import * as useAuthModule from '@/hooks/useAuth';
 import * as useMachinesModule from '@/hooks/useMachines';
@@ -24,7 +25,6 @@ const mockSignOut = jest.fn();
 const mockBlock: HostelBlock = {
   id: 'block-a-id',
   name: 'Block A',
-  created_at: '',
 };
 
 const mockMachines: MachineWithSession[] = [
@@ -34,10 +34,12 @@ const mockMachines: MachineWithSession[] = [
     label: '01',
     capacity_kg: 6.5,
     status: 'available',
-    status_updated_by: null,
     status_updated_at: '',
+    verified_at: null,
     note: null,
-    created_at: '',
+    started_at: null,
+    ends_at: null,
+    is_finished: false,
   },
   {
     id: 'm2',
@@ -45,12 +47,14 @@ const mockMachines: MachineWithSession[] = [
     label: '02',
     capacity_kg: 7.0,
     status: 'in_use',
-    status_updated_by: null,
     status_updated_at: '',
+    verified_at: null,
     note: null,
+    started_at: '2026-11-20T10:00:00Z',
+    ends_at: '2026-11-20T10:45:00Z',
+    is_finished: false,
     timeLeftMinutes: 14,
     progressPercent: 65,
-    created_at: '',
   },
   {
     id: 'm3',
@@ -58,10 +62,12 @@ const mockMachines: MachineWithSession[] = [
     label: '03',
     capacity_kg: 7.5,
     status: 'broken',
-    status_updated_by: null,
     status_updated_at: '',
+    verified_at: null,
     note: 'Door latch fault',
-    created_at: '',
+    started_at: null,
+    ends_at: null,
+    is_finished: false,
   },
   {
     id: 'm4',
@@ -69,16 +75,25 @@ const mockMachines: MachineWithSession[] = [
     label: '04',
     capacity_kg: 7.0,
     status: 'maintenance',
-    status_updated_by: null,
     status_updated_at: '',
+    verified_at: null,
     note: 'Filter cleaning',
-    created_at: '',
+    started_at: null,
+    ends_at: null,
+    is_finished: false,
   },
 ];
 
 describe('StudentHomeScreen', () => {
+  let queryClient: QueryClient;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+      },
+    });
 
     (useActiveSessionModule.useActiveSession as jest.Mock).mockReturnValue({
       activeSession: null,
@@ -93,8 +108,6 @@ describe('StudentHomeScreen', () => {
         name: 'Student One',
         role: 'student',
         hostel_block_id: 'block-a-id',
-        created_at: '',
-        updated_at: '',
       },
       session: {} as never,
       role: 'student',
@@ -108,6 +121,18 @@ describe('StudentHomeScreen', () => {
       refreshProfile: jest.fn(),
     });
   });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  const renderComponent = async () => {
+    return await render(
+      <QueryClientProvider client={queryClient}>
+        <StudentHomeScreen />
+      </QueryClientProvider>
+    );
+  };
 
   it('renders loading skeletons when initial load is in progress', async () => {
     jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
@@ -127,7 +152,7 @@ describe('StudentHomeScreen', () => {
       refetch: jest.fn().mockResolvedValue(undefined),
     });
 
-    const { getByTestId, getByText } = await render(<StudentHomeScreen />);
+    const { getByTestId, getByText } = await renderComponent();
     expect(getByTestId('loading-skeletons')).toBeTruthy();
     expect(getByText('Checking machines…')).toBeTruthy();
   });
@@ -151,7 +176,7 @@ describe('StudentHomeScreen', () => {
       refetch: mockRefetch,
     });
 
-    const { getByTestId, getByText } = await render(<StudentHomeScreen />);
+    const { getByTestId, getByText } = await renderComponent();
     expect(getByTestId('error-state')).toBeTruthy();
     expect(getByText('Unable to load machines')).toBeTruthy();
 
@@ -179,7 +204,7 @@ describe('StudentHomeScreen', () => {
       refetch: jest.fn().mockResolvedValue(undefined),
     });
 
-    const { getByText, getByTestId } = await render(<StudentHomeScreen />);
+    const { getByText, getByTestId } = await renderComponent();
 
     // Header summary and block subtitle
     expect(getByText('1 of 4 free')).toBeTruthy();
@@ -199,7 +224,7 @@ describe('StudentHomeScreen', () => {
     expect(getByTestId('broken-indicator-03')).toBeTruthy();
   });
 
-  it('navigates to start screen when an available machine is pressed', async () => {
+  it('navigates to start screen when an available machine is pressed and confirmed in sheet', async () => {
     jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
       machines: mockMachines,
       block: mockBlock,
@@ -217,11 +242,19 @@ describe('StudentHomeScreen', () => {
       refetch: jest.fn().mockResolvedValue(undefined),
     });
 
-    const { getByLabelText } = await render(<StudentHomeScreen />);
+    const { getByLabelText, getByTestId } = await renderComponent();
 
     const availableTile = getByLabelText(/Machine 01, 6.5 kilograms, Available/);
     await act(async () => {
       fireEvent.press(availableTile);
+    });
+
+    // Sheet opens with "Start a wash here"
+    const startWashBtn = getByTestId('sheet-start-wash-button');
+    expect(startWashBtn).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(startWashBtn);
     });
 
     expect(mockPush).toHaveBeenCalledWith('/(student)/start?machineId=m1');
@@ -246,35 +279,9 @@ describe('StudentHomeScreen', () => {
       refetch: jest.fn().mockResolvedValue(undefined),
     });
 
-    const { getByLabelText, getByText } = await render(<StudentHomeScreen />);
+    const { getByLabelText, getByText } = await renderComponent();
     expect(getByLabelText('Offline banner')).toBeTruthy();
     expect(getByText(/Offline · Last synced/)).toBeTruthy();
-  });
-
-  it('triggers sign out when log out header action is pressed', async () => {
-    jest.spyOn(useMachinesModule, 'useMachines').mockReturnValue({
-      machines: mockMachines,
-      block: mockBlock,
-      totalCount: 4,
-      availableCount: 1,
-      inUseCount: 1,
-      brokenCount: 1,
-      maintenanceCount: 1,
-      isLoading: false,
-      isRefetching: false,
-      isError: false,
-      error: null,
-      isOffline: false,
-      lastSyncedAt: new Date(),
-      refetch: jest.fn().mockResolvedValue(undefined),
-    });
-
-    const { getByLabelText } = await render(<StudentHomeScreen />);
-    await act(async () => {
-      fireEvent.press(getByLabelText('Sign out'));
-    });
-
-    expect(mockSignOut).toHaveBeenCalled();
   });
 
   it('renders active wash session banner and navigates to timer on press', async () => {
@@ -314,7 +321,7 @@ describe('StudentHomeScreen', () => {
       refetch: jest.fn().mockResolvedValue(undefined),
     });
 
-    const { getByTestId, getByText } = await render(<StudentHomeScreen />);
+    const { getByTestId, getByText } = await renderComponent();
     expect(getByTestId('active-session-banner')).toBeTruthy();
     expect(getByText(/Machine 01/)).toBeTruthy();
 
@@ -325,7 +332,7 @@ describe('StudentHomeScreen', () => {
     expect(mockPush).toHaveBeenCalledWith('/(student)/timer/session-active-1');
   });
 
-  it('allows students to report an issue directly from the machine tile', async () => {
+  it('allows students to report an issue from the machine details sheet', async () => {
     const reportSpy = jest
       .spyOn(washService, 'reportMachineIssue')
       .mockResolvedValue({ success: true });
@@ -347,16 +354,21 @@ describe('StudentHomeScreen', () => {
       refetch: jest.fn().mockResolvedValue(undefined),
     });
 
-    const { getByTestId, getByText } = await render(<StudentHomeScreen />);
-    expect(getByTestId('report-issue-tile-01')).toBeTruthy();
+    const { getByLabelText, getByText, getByTestId } = await renderComponent();
 
-    // Tap report issue icon on Machine 01 tile
+    // Tap broken machine (03) tile to open bottom sheet
+    const brokenTile = getByLabelText(/Machine 03/);
     await act(async () => {
-      fireEvent.press(getByTestId('report-issue-tile-01'));
+      fireEvent.press(brokenTile);
+    });
+
+    // In sheet, tap "Report a problem"
+    await act(async () => {
+      fireEvent.press(getByText('Report a problem'));
     });
 
     expect(getByTestId('tile-report-issue-modal')).toBeTruthy();
-    expect(getByText(/Report machine issue/)).toBeTruthy();
+    expect(getByText('Report machine issue')).toBeTruthy();
 
     // Enter description
     await act(async () => {
@@ -371,7 +383,7 @@ describe('StudentHomeScreen', () => {
       fireEvent.press(getByTestId('submit-tile-issue-button'));
     });
 
-    expect(reportSpy).toHaveBeenCalledWith('m1', 'Water puddling under drum', '01');
+    expect(reportSpy).toHaveBeenCalledWith('m3', 'Water puddling under drum', '03');
     expect(getByTestId('tile-issue-success')).toBeTruthy();
   });
 });

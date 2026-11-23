@@ -13,36 +13,19 @@ jest.mock('../supabase', () => ({
 
 describe('RLS & Security Tests: issue_reports resolution', () => {
   const mockIssueId = 'issue-uuid-123';
-  const mockMachineId = 'machine-uuid-456';
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   describe('Student cannot resolve issue reports', () => {
-    it('rejects student role attempting to call resolve_issue_report RPC with 42501 unauthorized', async () => {
+    it('rejects student role attempting to call resolve_issue RPC with forbidden error', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
         data: null,
         error: {
           code: '42501',
-          message: 'Unauthorized: Only caretakers can resolve issue reports',
+          message: 'forbidden',
         },
-      });
-
-      (supabase.auth.getUser as jest.Mock).mockResolvedValueOnce({
-        data: { user: { id: 'student-user-1' } },
-      });
-
-      // Direct fallback update attempt by student is also rejected by RLS
-      (supabase.from as jest.Mock).mockReturnValueOnce({
-        update: jest.fn().mockReturnValue({
-          eq: jest.fn().mockResolvedValueOnce({
-            error: {
-              code: '42501',
-              message: 'new row violates row-level security policy for table "issue_reports"',
-            },
-          }),
-        }),
       });
 
       const result = await resolveIssue({
@@ -51,7 +34,12 @@ describe('RLS & Security Tests: issue_reports resolution', () => {
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('security policy');
+      expect(result.error).toBe('You do not have permission to perform this action.');
+      expect(supabase.rpc).toHaveBeenCalledWith('resolve_issue', {
+        p_report: mockIssueId,
+        p_new_status: 'available',
+        p_note: null,
+      });
     });
   });
 
@@ -59,10 +47,8 @@ describe('RLS & Security Tests: issue_reports resolution', () => {
     it('allows caretaker role to resolve issue and atomically update machine status', async () => {
       (supabase.rpc as jest.Mock).mockResolvedValueOnce({
         data: {
-          success: true,
-          issue_id: mockIssueId,
-          machine_id: mockMachineId,
-          machine_status: 'available',
+          id: mockIssueId,
+          resolved_at: new Date().toISOString(),
         },
         error: null,
       });
@@ -73,10 +59,10 @@ describe('RLS & Security Tests: issue_reports resolution', () => {
         resolutionNote: 'Fixed door latch',
       });
 
-      expect(supabase.rpc).toHaveBeenCalledWith('resolve_issue_report', {
-        p_issue_id: mockIssueId,
-        p_machine_status: 'available',
-        p_status_note: 'Fixed door latch',
+      expect(supabase.rpc).toHaveBeenCalledWith('resolve_issue', {
+        p_report: mockIssueId,
+        p_new_status: 'available',
+        p_note: 'Fixed door latch',
       });
       expect(result.success).toBe(true);
     });

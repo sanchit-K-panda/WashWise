@@ -1,6 +1,6 @@
 import '../global.css';
 import { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import { Stack, SplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -68,14 +68,42 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <StatusBar style="dark" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.bg },
-            animation: 'fade',
-          }}
-        />
+        <View style={styles.outerContainer}>
+          <View style={styles.appContainer}>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: 'transparent' },
+                animation: 'fade',
+              }}
+            />
+          </View>
+        </View>
       </AuthProvider>
     </QueryClientProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  outerContainer: {
+    flex: 1,
+    backgroundColor: Platform.OS === 'web' ? '#EEF3F7' : '#E3F1FB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  appContainer: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: '#E3F1FB',
+    ...(Platform.OS === 'web'
+      ? {
+          maxWidth: 430,
+          marginHorizontal: 'auto' as unknown as number,
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderColor: colors.hairline,
+          minHeight: '100%',
+        }
+      : {}),
+  },
+});

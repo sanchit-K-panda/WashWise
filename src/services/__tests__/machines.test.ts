@@ -17,22 +17,24 @@ describe('Machines Service', () => {
   });
 
   describe('fetchMachines', () => {
-    it('fetches machines and attaches active sessions with computed time and progress', async () => {
+    it('fetches machines from machine_board view and computes remaining time and progress', async () => {
       const now = new Date();
       const startedAt = new Date(now.getTime() - 20 * 60 * 1000).toISOString(); // 20m ago
       const endsAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString(); // 15m remaining
 
-      const mockMachines = [
+      const mockBoardRows = [
         {
           id: 'm1',
           block_id: blockId,
           label: '01',
           capacity_kg: 7,
           status: 'available',
-          status_updated_by: null,
           status_updated_at: '',
+          verified_at: null,
           note: null,
-          created_at: '',
+          started_at: null,
+          ends_at: null,
+          is_finished: false,
         },
         {
           id: 'm2',
@@ -40,10 +42,12 @@ describe('Machines Service', () => {
           label: '02',
           capacity_kg: 7,
           status: 'in_use',
-          status_updated_by: null,
           status_updated_at: '',
+          verified_at: null,
           note: null,
-          created_at: '',
+          started_at: startedAt,
+          ends_at: endsAt,
+          is_finished: false,
         },
         {
           id: 'm3',
@@ -51,67 +55,45 @@ describe('Machines Service', () => {
           label: '03',
           capacity_kg: 7,
           status: 'broken',
-          status_updated_by: null,
           status_updated_at: '',
+          verified_at: null,
           note: 'Latch fault',
-          created_at: '',
+          started_at: null,
+          ends_at: null,
+          is_finished: false,
         },
       ];
 
-      const mockSessions = [
-        {
-          id: 's1',
-          machine_id: 'm2',
-          started_at: startedAt,
-          ends_at: endsAt,
-          status: 'running',
-        },
-      ];
-
-      (supabase.from as jest.Mock).mockImplementation((table: string) => {
-        if (table === 'machines') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockReturnThis(),
-            order: jest.fn().mockResolvedValueOnce({ data: mockMachines, error: null }),
-          };
-        }
-        if (table === 'wash_sessions') {
-          return {
-            select: jest.fn().mockReturnThis(),
-            eq: jest.fn().mockResolvedValueOnce({ data: mockSessions, error: null }),
-          };
-        }
-        return {};
+      (supabase.from as jest.Mock).mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValueOnce({ data: mockBoardRows, error: null }),
       });
 
       const machines = await fetchMachines(blockId);
 
+      expect(supabase.from).toHaveBeenCalledWith('machine_board');
       expect(machines).toHaveLength(3);
-      // Available machine has no session
+
+      // Available machine has no session timing
       expect(machines[0].id).toBe('m1');
       expect(machines[0].status).toBe('available');
-      expect(machines[0].activeSession).toBeNull();
       expect(machines[0].timeLeftMinutes).toBeUndefined();
 
-      // In use machine has active session and calculated time
+      // In use machine computes remaining minutes and progress percent
       expect(machines[1].id).toBe('m2');
       expect(machines[1].status).toBe('in_use');
-      expect(machines[1].activeSession).not.toBeNull();
-      expect(machines[1].activeSession?.id).toBe('s1');
       expect(machines[1].timeLeftMinutes).toBeGreaterThanOrEqual(14);
       expect(machines[1].progressPercent).toBeGreaterThanOrEqual(50);
 
-      // Broken machine has no session
+      // Broken machine has no session timing
       expect(machines[2].id).toBe('m3');
       expect(machines[2].status).toBe('broken');
-      expect(machines[2].activeSession).toBeNull();
+      expect(machines[2].timeLeftMinutes).toBeUndefined();
     });
 
-    it('throws error when supabase machine query fails', async () => {
+    it('throws error when supabase machine_board query fails', async () => {
       (supabase.from as jest.Mock).mockReturnValueOnce({
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
         order: jest.fn().mockResolvedValueOnce({
           data: null,
           error: { message: 'Network connection failed' },
@@ -127,7 +109,6 @@ describe('Machines Service', () => {
       const mockBlock = {
         id: blockId,
         name: 'Block A',
-        created_at: '',
       };
 
       (supabase.from as jest.Mock).mockReturnValueOnce({
@@ -140,17 +121,16 @@ describe('Machines Service', () => {
       expect(block).toEqual(mockBlock);
     });
 
-    it('returns null when block is not found or errors', async () => {
+    it('throws when block query errors', async () => {
       (supabase.from as jest.Mock).mockReturnValueOnce({
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
         maybeSingle: jest
           .fn()
-          .mockResolvedValueOnce({ data: null, error: { message: 'Not found' } }),
+          .mockResolvedValueOnce({ data: null, error: { message: 'Block not found' } }),
       });
 
-      const block = await fetchHostelBlock(blockId);
-      expect(block).toBeNull();
+      await expect(fetchHostelBlock(blockId)).rejects.toThrow('Block not found');
     });
   });
 

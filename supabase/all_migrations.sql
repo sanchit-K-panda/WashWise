@@ -1,156 +1,393 @@
-﻿-- 20261120000001_initial_schema.sql
--- Core schema definition for WashWise from DATA_MODEL.md
+-- ==============================================================================
+-- WashWise: Comprehensive Database Reset, Schema, RPCs & Seed Migration
+-- Safe & Idempotent: Run in Supabase SQL Editor
+-- ==============================================================================
 
--- Extensions
+create extension if not exists pgcrypto;
 create extension if not exists "uuid-ossp";
-create extension if not exists "pgcrypto";
 
--- Enums
-do $$
-begin
-  if not exists (select 1 from pg_type where typname = 'machine_status') then
-    create type machine_status as enum ('available', 'in_use', 'broken', 'maintenance');
-  end if;
-  if not exists (select 1 from pg_type where typname = 'user_role') then
-    create type user_role as enum ('student', 'caretaker');
-  end if;
-end
-$$;
+-- ---------- 1. TEARDOWN ----------
+drop trigger if exists on_auth_user_created on auth.users;
+drop trigger if exists on_auth_user_auto_confirm on auth.users;
+drop view if exists public.machine_board;
+drop table if exists public.status_log, public.issue_reports, public.wash_sessions, public.wash_programs,
+  public.temp_adjustments, public.spin_adjustments, public.machines, public.profiles, public.hostel_blocks cascade;
+drop type if exists public.machine_status, public.user_role cascade;
 
--- 1. Hostel Blocks
-create table if not exists public.hostel_blocks (
+do $$ declare r record; begin
+  for r in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname in (
+      'start_wash','verify_machine_status','force_clear_machine','resolve_issue_report',
+      'set_machine_status','verify_machine','collect_wash','cancel_wash','end_wash',
+      'report_issue','resolve_issue','is_caretaker','my_block','handle_new_user',
+      'log_status_change','auto_confirm_new_user'
+    )
+  loop execute 'drop function ' || r.sig || ' cascade'; end loop;
+end $$;
+
+-- ---------- 2. TYPES & TABLES ----------
+create type public.user_role as enum ('student','caretaker');
+create type public.machine_status as enum ('available','in_use','maintenance','broken');
+
+create table public.hostel_blocks (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique
+);
+
+create table public.profiles (
+  id uuid primary key references auth.users on delete cascade,
+  name text not null default '',
+  role public.user_role not null default 'student',
+  hostel_block_id uuid references public.hostel_blocks
+);
+
+create table public.machines (
+  id uuid primary key default gen_random_uuid(),
+  block_id uuid not null references public.hostel_blocks,
+  label text not null,
+  capacity_kg numeric(4,1) not null check (capacity_kg > 0),
+  status public.machine_status not null default 'available',
+  status_updated_by uuid references public.profiles,
+  status_updated_at timestamptz not null default now(),
+  verified_at timestamptz,
+  verified_by uuid references public.profiles,
+  note text,
+  unique (block_id, label)
+);
+
+create table public.wash_programs (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
-  created_at timestamptz not null default now()
-);
-
--- 2. User Profiles
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  name text not null,
-  role user_role not null default 'student',
-  hostel_block_id uuid references public.hostel_blocks(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
--- 3. Machines
-create table if not exists public.machines (
-  id uuid primary key default gen_random_uuid(),
-  block_id uuid not null references public.hostel_blocks(id) on delete cascade,
-  label text not null,
-  capacity_kg numeric not null check (capacity_kg > 0),
-  status machine_status not null default 'available',
-  status_updated_by uuid references auth.users(id) on delete set null,
-  status_updated_at timestamptz not null default now(),
-  note text,
-  created_at timestamptz not null default now(),
-  constraint machines_block_label_unique unique (block_id, label)
-);
-
--- 4. Wash Programs
-create table if not exists public.wash_programs (
-  id text primary key,
-  name text not null,
-  base_minutes integer not null check (base_minutes >= 0),
-  per_kg_minutes numeric not null check (per_kg_minutes >= 0),
+  base_minutes int not null,
+  per_kg_minutes numeric not null default 2,
   active boolean not null default true
 );
 
--- 5. Temp Adjustments
-create table if not exists public.temp_adjustments (
+create table public.temp_adjustments (
   temp text primary key,
-  minutes integer not null check (minutes >= 0)
+  minutes int not null
 );
 
--- 6. Spin Adjustments
-create table if not exists public.spin_adjustments (
+create table public.spin_adjustments (
   spin text primary key,
-  minutes integer not null check (minutes >= 0)
+  minutes int not null
 );
 
--- 7. Wash Sessions
-create table if not exists public.wash_sessions (
+create table public.wash_sessions (
   id uuid primary key default gen_random_uuid(),
-  machine_id uuid not null references public.machines(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  program_id text not null references public.wash_programs(id),
-  temp text not null references public.temp_adjustments(temp),
-  spin text not null references public.spin_adjustments(spin),
-  weight_kg numeric not null check (weight_kg > 0),
+  machine_id uuid not null references public.machines,
+  user_id uuid not null references public.profiles,
+  program_id uuid not null references public.wash_programs,
+  temp text not null references public.temp_adjustments,
+  spin text not null references public.spin_adjustments,
+  weight_kg numeric(4,1) not null check (weight_kg > 0),
   started_at timestamptz not null default now(),
   ends_at timestamptz not null,
   collected_at timestamptz,
-  status text not null default 'running' check (status in ('running', 'done', 'collected', 'cancelled'))
+  status text not null default 'running' check (status in ('running','collected','cancelled'))
 );
 
--- 8. Issue Reports
-create table if not exists public.issue_reports (
+create unique index one_running_per_machine on public.wash_sessions (machine_id) where status = 'running';
+create unique index one_running_per_user on public.wash_sessions (user_id) where status = 'running';
+
+create table public.issue_reports (
   id uuid primary key default gen_random_uuid(),
-  machine_id uuid not null references public.machines(id) on delete cascade,
-  reported_by uuid not null references auth.users(id) on delete cascade,
-  description text not null,
+  machine_id uuid not null references public.machines,
+  reported_by uuid not null references public.profiles,
+  description text not null check (char_length(description) between 3 and 500),
   created_at timestamptz not null default now(),
   resolved_at timestamptz,
-  resolved_by uuid references auth.users(id) on delete set null
+  resolved_by uuid references public.profiles
 );
 
--- 9. Status Log
-create table if not exists public.status_log (
+create table public.status_log (
   id uuid primary key default gen_random_uuid(),
-  machine_id uuid not null references public.machines(id) on delete cascade,
-  old_status machine_status not null,
-  new_status machine_status not null,
-  changed_by uuid references auth.users(id) on delete set null,
-  changed_at timestamptz not null default now()
+  machine_id uuid not null references public.machines,
+  old_status public.machine_status,
+  new_status public.machine_status not null,
+  changed_by uuid,
+  changed_at timestamptz not null default now(),
+  note text
 );
 
--- Trigger: Automatically record status change in status_log
-create or replace function public.log_machine_status_change()
-returns trigger
-language plpgsql
-security definer
-as $$
-begin
-  if (TG_OP = 'UPDATE' and OLD.status is distinct from NEW.status) then
-    insert into public.status_log (
-      machine_id,
-      old_status,
-      new_status,
-      changed_by,
-      changed_at
-    ) values (
-      NEW.id,
-      OLD.status,
-      NEW.status,
-      NEW.status_updated_by,
-      coalesce(NEW.status_updated_at, now())
-    );
-  end if;
-  return NEW;
-end;
+-- ---------- 3. HELPERS & TRIGGERS ----------
+create or replace function public.is_caretaker() returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role = 'caretaker');
 $$;
 
-drop trigger if exists tr_machine_status_change on public.machines;
-create trigger tr_machine_status_change
-after update on public.machines
-for each row
-execute function public.log_machine_status_change();
+create or replace function public.my_block() returns uuid language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select hostel_block_id from public.profiles where id = auth.uid()),
+    (select id from public.hostel_blocks order by name limit 1)
+  );
+$$;
 
--- Performance Indexes
-create index if not exists idx_machines_block_id on public.machines(block_id);
-create index if not exists idx_machines_status on public.machines(status);
-create index if not exists idx_profiles_block_id on public.profiles(hostel_block_id);
-create index if not exists idx_wash_sessions_machine on public.wash_sessions(machine_id);
-create index if not exists idx_wash_sessions_user on public.wash_sessions(user_id);
-create index if not exists idx_wash_sessions_status on public.wash_sessions(status);
-create index if not exists idx_wash_sessions_ends_at on public.wash_sessions(ends_at);
-create index if not exists idx_issue_reports_machine on public.issue_reports(machine_id);
-create index if not exists idx_status_log_machine on public.status_log(machine_id);
--- 20261120000002_rls_policies.sql
--- Row Level Security policies from DATA_MODEL.md
+-- Auto-confirm any newly inserted user immediately in database
+create or replace function public.auto_confirm_new_user() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  new.email_confirmed_at := coalesce(new.email_confirmed_at, now());
+  return new;
+end $$;
 
--- Enable RLS across all tables
+drop trigger if exists on_auth_user_auto_confirm on auth.users;
+create trigger on_auth_user_auto_confirm
+  before insert on auth.users
+  for each row execute function public.auto_confirm_new_user();
+
+-- Automatic profile creation for every auth.user
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_role public.user_role;
+  v_name text;
+  v_block_id uuid;
+begin
+  select id into v_block_id from public.hostel_blocks order by name limit 1;
+
+  v_role := case
+    when new.raw_user_meta_data->>'role' = 'caretaker' or new.email like '%@washwise.app' then 'caretaker'::public.user_role
+    else 'student'::public.user_role
+  end;
+
+  v_name := coalesce(
+    new.raw_user_meta_data->>'name',
+    new.raw_user_meta_data->>'full_name',
+    split_part(new.email, '@', 1),
+    'User'
+  );
+
+  insert into public.profiles (id, name, role, hostel_block_id)
+  values (new.id, v_name, v_role, v_block_id)
+  on conflict (id) do update
+  set name = excluded.name,
+      role = excluded.role,
+      hostel_block_id = coalesce(profiles.hostel_block_id, v_block_id);
+
+  return new;
+end $$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Automatic status transition logging
+create or replace function public.log_status_change() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.status is distinct from old.status then
+    insert into public.status_log (machine_id, old_status, new_status, changed_by, note)
+    values (new.id, old.status, new.status, auth.uid(), new.note);
+  end if;
+  return new;
+end $$;
+
+create trigger machines_status_log
+  after update of status on public.machines
+  for each row execute function public.log_status_change();
+
+-- ---------- 4. READ MODEL FOR STUDENTS ----------
+create view public.machine_board as
+select
+  m.id,
+  m.block_id,
+  m.label,
+  m.capacity_kg,
+  m.status,
+  m.note,
+  m.verified_at,
+  m.status_updated_at,
+  s.started_at,
+  s.ends_at,
+  (m.status = 'in_use' and s.ends_at <= now()) as is_finished
+from public.machines m
+left join lateral (
+  select w.started_at, w.ends_at
+  from public.wash_sessions w
+  where w.machine_id = m.id and w.status = 'running'
+  limit 1
+) s on true
+where m.block_id = public.my_block();
+
+-- ---------- 5. ATOMIC STORED PROCEDURES (RPCS) ----------
+
+-- Start wash
+create or replace function public.start_wash(
+  p_machine uuid,
+  p_program uuid,
+  p_temp text,
+  p_spin text,
+  p_weight numeric
+)
+returns public.wash_sessions
+language plpgsql security definer set search_path = public as $$
+declare
+  m public.machines;
+  prog public.wash_programs;
+  t int;
+  s int;
+  total_min int;
+  sess public.wash_sessions;
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+
+  select * into m from machines where id = p_machine and block_id = my_block() for update;
+  if not found then raise exception 'machine_not_found'; end if;
+  if m.status <> 'available' then raise exception 'machine_unavailable'; end if;
+  if p_weight is null or p_weight <= 0 or p_weight > m.capacity_kg then raise exception 'overload'; end if;
+
+  select * into prog from wash_programs where id = p_program and active;
+  if not found then raise exception 'bad_program'; end if;
+
+  select minutes into t from temp_adjustments where temp = p_temp;
+  if not found then raise exception 'bad_temp'; end if;
+
+  select minutes into s from spin_adjustments where spin = p_spin;
+  if not found then raise exception 'bad_spin'; end if;
+
+  total_min := prog.base_minutes + t + s + ceil(greatest(p_weight - 1, 0) * prog.per_kg_minutes)::int;
+
+  insert into wash_sessions (machine_id, user_id, program_id, temp, spin, weight_kg, ends_at)
+  values (m.id, auth.uid(), prog.id, p_temp, p_spin, p_weight, now() + make_interval(mins => total_min))
+  returning * into sess;
+
+  update machines
+  set status = 'in_use', status_updated_by = auth.uid(), status_updated_at = now()
+  where id = m.id;
+
+  return sess;
+exception
+  when unique_violation then raise exception 'already_running';
+end $$;
+
+-- End wash ('collected' or 'cancelled')
+create or replace function public.end_wash(
+  p_session uuid,
+  p_outcome text
+)
+returns public.wash_sessions
+language plpgsql security definer set search_path = public as $$
+declare
+  w public.wash_sessions;
+begin
+  if p_outcome not in ('collected','cancelled') then raise exception 'bad_outcome'; end if;
+
+  update wash_sessions
+  set status = p_outcome, collected_at = now()
+  where id = p_session and user_id = auth.uid() and status = 'running'
+  returning * into w;
+
+  if not found then raise exception 'session_not_found'; end if;
+
+  update machines
+  set status = 'available', status_updated_by = auth.uid(), status_updated_at = now()
+  where id = w.machine_id and status = 'in_use';
+
+  return w;
+end $$;
+
+-- Caretaker: set status & verification
+create or replace function public.set_machine_status(
+  p_machine uuid,
+  p_status public.machine_status,
+  p_note text default null
+)
+returns public.machines
+language plpgsql security definer set search_path = public as $$
+declare
+  m public.machines;
+begin
+  if not is_caretaker() then raise exception 'forbidden'; end if;
+  if p_status = 'in_use' then raise exception 'invalid_status'; end if;
+
+  select * into m from machines where id = p_machine and block_id = my_block() for update;
+  if not found then raise exception 'machine_not_found'; end if;
+
+  update wash_sessions
+  set status = 'cancelled', collected_at = now()
+  where machine_id = m.id and status = 'running';
+
+  update machines
+  set status = p_status,
+      note = p_note,
+      status_updated_by = auth.uid(),
+      status_updated_at = now(),
+      verified_at = now(),
+      verified_by = auth.uid()
+  where id = m.id
+  returning * into m;
+
+  return m;
+end $$;
+
+-- Caretaker: verify without changing status
+create or replace function public.verify_machine(
+  p_machine uuid
+)
+returns public.machines
+language plpgsql security definer set search_path = public as $$
+declare
+  m public.machines;
+begin
+  if not is_caretaker() then raise exception 'forbidden'; end if;
+
+  update machines
+  set verified_at = now(), verified_by = auth.uid()
+  where id = p_machine and block_id = my_block()
+  returning * into m;
+
+  if not found then raise exception 'machine_not_found'; end if;
+  return m;
+end $$;
+
+-- Report issue
+create or replace function public.report_issue(
+  p_machine uuid,
+  p_description text
+)
+returns public.issue_reports
+language plpgsql security definer set search_path = public as $$
+declare
+  r public.issue_reports;
+begin
+  if auth.uid() is null then raise exception 'not_authenticated'; end if;
+  if not exists (select 1 from machines where id = p_machine and block_id = my_block()) then
+    raise exception 'machine_not_found';
+  end if;
+
+  insert into issue_reports (machine_id, reported_by, description)
+  values (p_machine, auth.uid(), trim(p_description))
+  returning * into r;
+
+  return r;
+end $$;
+
+-- Resolve issue
+create or replace function public.resolve_issue(
+  p_report uuid,
+  p_new_status public.machine_status default null,
+  p_note text default null
+)
+returns public.issue_reports
+language plpgsql security definer set search_path = public as $$
+declare
+  r public.issue_reports;
+begin
+  if not is_caretaker() then raise exception 'forbidden'; end if;
+
+  update issue_reports i
+  set resolved_at = now(), resolved_by = auth.uid()
+  where i.id = p_report and i.resolved_at is null
+    and exists (select 1 from machines m where m.id = i.machine_id and m.block_id = my_block())
+  returning * into r;
+
+  if not found then raise exception 'report_not_found'; end if;
+
+  if p_new_status is not null then
+    perform set_machine_status(r.machine_id, p_new_status, p_note);
+  end if;
+
+  return r;
+end $$;
+
+-- ---------- 6. ROW LEVEL SECURITY & PERMISSIONS ----------
 alter table public.hostel_blocks enable row level security;
 alter table public.profiles enable row level security;
 alter table public.machines enable row level security;
@@ -161,735 +398,162 @@ alter table public.wash_sessions enable row level security;
 alter table public.issue_reports enable row level security;
 alter table public.status_log enable row level security;
 
--- Helper functions for RLS checks
-create or replace function public.current_user_role()
-returns user_role
-language sql
-stable
-security definer
-as $$
-  select role from public.profiles where id = auth.uid();
-$$;
+-- Policies
+create policy blocks_read on public.hostel_blocks for select using (true);
+create policy programs_read on public.wash_programs for select using (true);
+create policy temps_read on public.temp_adjustments for select using (true);
+create policy spins_read on public.spin_adjustments for select using (true);
 
-create or replace function public.current_user_block_id()
-returns uuid
-language sql
-stable
-security definer
-as $$
-  select hostel_block_id from public.profiles where id = auth.uid();
-$$;
+create policy profiles_read on public.profiles for select to authenticated
+  using (id = auth.uid() or (is_caretaker() and hostel_block_id = my_block()));
+create policy profiles_update_own on public.profiles for update to authenticated
+  using (id = auth.uid()) with check (id = auth.uid());
 
--- 1. hostel_blocks policies
-create policy "Authenticated users can read hostel blocks"
-  on public.hostel_blocks for select
-  to authenticated
-  using (true);
+create policy machines_read on public.machines for select to authenticated
+  using (block_id = my_block());
 
--- 2. profiles policies
-create policy "Users can read profiles in same block or own profile"
-  on public.profiles for select
-  to authenticated
-  using (
-    id = auth.uid()
-    or hostel_block_id = public.current_user_block_id()
-  );
+create policy sessions_read on public.wash_sessions for select to authenticated
+  using (user_id = auth.uid() or (is_caretaker() and exists (
+    select 1 from public.machines m where m.id = machine_id and m.block_id = my_block()
+  )));
 
-create policy "Users can insert their own profile"
-  on public.profiles for insert
-  to authenticated
-  with check (id = auth.uid());
+create policy issues_read on public.issue_reports for select to authenticated
+  using (reported_by = auth.uid() or (is_caretaker() and exists (
+    select 1 from public.machines m where m.id = machine_id and m.block_id = my_block()
+  )));
 
-create policy "Users can update their own profile"
-  on public.profiles for update
-  to authenticated
-  using (id = auth.uid())
-  with check (id = auth.uid());
+create policy log_read on public.status_log for select to authenticated
+  using (is_caretaker() and exists (
+    select 1 from public.machines m where m.id = machine_id and m.block_id = my_block()
+  ));
 
--- 3. wash_programs, temp_adjustments, spin_adjustments policies
-create policy "Authenticated users can read active wash programs"
-  on public.wash_programs for select
-  to authenticated
-  using (active = true);
+-- Privileges
+revoke all on all tables in schema public from anon, authenticated;
+grant select on all tables in schema public to authenticated;
+grant select on public.hostel_blocks, public.wash_programs to anon;
+grant update (name) on public.profiles to authenticated;
 
-create policy "Authenticated users can read temp adjustments"
-  on public.temp_adjustments for select
-  to authenticated
-  using (true);
+revoke execute on all functions in schema public from public, anon;
+grant execute on function
+  public.is_caretaker(),
+  public.my_block(),
+  public.start_wash(uuid,uuid,text,text,numeric),
+  public.end_wash(uuid,text),
+  public.set_machine_status(uuid,public.machine_status,text),
+  public.verify_machine(uuid),
+  public.report_issue(uuid,text),
+  public.resolve_issue(uuid,public.machine_status,text)
+to authenticated;
 
-create policy "Authenticated users can read spin adjustments"
-  on public.spin_adjustments for select
-  to authenticated
-  using (true);
+-- ---------- 7. REALTIME ENGINE ----------
+do $$ begin alter publication supabase_realtime add table public.machines; exception when others then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.issue_reports; exception when others then null; end $$;
 
--- 4. machines policies
--- Students and caretakers can read machines in their own block
-create policy "Users can read machines in own block"
-  on public.machines for select
-  to authenticated
-  using (
-    block_id = public.current_user_block_id()
-  );
+-- ---------- 8. SEED DATA ----------
+insert into public.hostel_blocks (name) values ('Block A') on conflict (name) do nothing;
 
--- Caretakers can update machine status/note in their own block
-create policy "Caretakers can update machines in own block"
-  on public.machines for update
-  to authenticated
-  using (
-    block_id = public.current_user_block_id()
-    and public.current_user_role() = 'caretaker'
-  )
-  with check (
-    block_id = public.current_user_block_id()
-    and public.current_user_role() = 'caretaker'
-  );
+insert into public.machines (block_id, label, capacity_kg)
+select (select id from public.hostel_blocks where name = 'Block A'), l, c
+from (values ('01',7.0),('02',7.0),('03',8.0),('04',7.0),('05',7.0),('06',7.0)) as v(l,c)
+on conflict (block_id, label) do nothing;
 
--- 5. wash_sessions policies
--- Students can read own sessions; Caretakers can read sessions for machines in their block
-create policy "Users can read relevant wash sessions"
-  on public.wash_sessions for select
-  to authenticated
-  using (
-    user_id = auth.uid()
-    or (
-      public.current_user_role() = 'caretaker'
-      and machine_id in (
-        select id from public.machines where block_id = public.current_user_block_id()
-      )
-    )
-  );
+insert into public.wash_programs (name, base_minutes)
+values ('Eco',35),('Normal',45),('Heavy',60),('Delicates',30)
+on conflict (name) do nothing;
 
--- Students can insert own wash sessions
-create policy "Students can insert own wash sessions"
-  on public.wash_sessions for insert
-  to authenticated
-  with check (
-    user_id = auth.uid()
-    and machine_id in (
-      select id from public.machines where block_id = public.current_user_block_id()
-    )
-  );
+insert into public.temp_adjustments values ('cold',0),('30',4),('40',8),('60',15)
+on conflict (temp) do nothing;
 
--- Students can update own sessions (e.g. mark collected); Caretakers can update sessions in own block (force-clear)
-create policy "Users can update relevant wash sessions"
-  on public.wash_sessions for update
-  to authenticated
-  using (
-    user_id = auth.uid()
-    or (
-      public.current_user_role() = 'caretaker'
-      and machine_id in (
-        select id from public.machines where block_id = public.current_user_block_id()
-      )
-    )
-  )
-  with check (
-    user_id = auth.uid()
-    or public.current_user_role() = 'caretaker'
-  );
+insert into public.spin_adjustments values ('low',0),('medium',2),('high',5)
+on conflict (spin) do nothing;
 
--- 6. issue_reports policies
--- Students can read own reports; Caretakers can read all reports in their block
-create policy "Users can read relevant issue reports"
-  on public.issue_reports for select
-  to authenticated
-  using (
-    reported_by = auth.uid()
-    or (
-      public.current_user_role() = 'caretaker'
-      and machine_id in (
-        select id from public.machines where block_id = public.current_user_block_id()
-      )
-    )
-  );
+-- ---------- 9. USER AUTO-CONFIRMATION & CARETAKER BOOTSTRAP ----------
 
--- Students can insert issue reports for machines in their block
-create policy "Students can insert issue reports in own block"
-  on public.issue_reports for insert
-  to authenticated
-  with check (
-    reported_by = auth.uid()
-    and machine_id in (
-      select id from public.machines where block_id = public.current_user_block_id()
-    )
-  );
+-- Confirm all existing users in auth.users
+update auth.users
+set email_confirmed_at = now()
+where email_confirmed_at is null;
 
--- Caretakers can resolve issue reports in their block
-create policy "Caretakers can resolve issue reports in own block"
-  on public.issue_reports for update
-  to authenticated
-  using (
-    public.current_user_role() = 'caretaker'
-    and machine_id in (
-      select id from public.machines where block_id = public.current_user_block_id()
-    )
-  )
-  with check (
-    public.current_user_role() = 'caretaker'
-  );
-
--- 7. status_log policies
--- Caretakers can read status logs for machines in their block
-create policy "Caretakers can read status log in own block"
-  on public.status_log for select
-  to authenticated
-  using (
-    public.current_user_role() = 'caretaker'
-    and machine_id in (
-      select id from public.machines where block_id = public.current_user_block_id()
-    )
-  );
--- 20261120000003_start_wash_rpc.sql
--- RPC start_wash: Atomic reservation, server-side duration calculation, overload rejection
-
-create or replace function public.start_wash(
-  p_machine_id uuid,
-  p_program_id text,
-  p_temp text,
-  p_spin text,
-  p_weight_kg numeric
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_user_id uuid;
-  v_user_block_id uuid;
-  v_machine public.machines%rowtype;
-  v_program public.wash_programs%rowtype;
-  v_temp_adj integer := 0;
-  v_spin_adj integer := 0;
-  v_load_minutes integer;
-  v_total_minutes integer;
-  v_started_at timestamptz := now();
-  v_ends_at timestamptz;
-  v_session_id uuid;
-begin
-  -- 1. Ensure user is authenticated
-  v_user_id := auth.uid();
-  if v_user_id is null then
-    raise exception 'Authentication required' using errcode = '42501';
-  end if;
-
-  -- 2. Verify weight is valid
-  if p_weight_kg is null or p_weight_kg <= 0 then
-    raise exception 'Weight must be greater than 0 kg' using errcode = '22003';
-  end if;
-
-  -- 3. Atomic lock on the machine row to prevent double-booking
-  select *
-  into v_machine
-  from public.machines
-  where id = p_machine_id
-  for update;
-
-  if not found then
-    raise exception 'Machine not found' using errcode = 'P0002';
-  end if;
-
-  -- 4. Check block matching
-  select hostel_block_id
-  into v_user_block_id
-  from public.profiles
-  where id = v_user_id;
-
-  if v_user_block_id is distinct from v_machine.block_id then
-    raise exception 'Cannot book machine in a different hostel block' using errcode = '42501';
-  end if;
-
-  -- 5. Check machine availability
-  if v_machine.status <> 'available' then
-    raise exception 'Machine is not available (current status: %)', v_machine.status
-      using errcode = 'WW001';
-  end if;
-
-  -- 6. Check capacity (reject overload)
-  if p_weight_kg > v_machine.capacity_kg then
-    raise exception 'Load weight (% kg) exceeds machine capacity (% kg)', p_weight_kg, v_machine.capacity_kg
-      using errcode = 'WW002';
-  end if;
-
-  -- 7. Fetch wash program
-  select *
-  into v_program
-  from public.wash_programs
-  where id = p_program_id and active = true;
-
-  if not found then
-    raise exception 'Active wash program not found: %', p_program_id
-      using errcode = 'P0002';
-  end if;
-
-  -- 8. Fetch temperature adjustment
-  select coalesce(minutes, 0)
-  into v_temp_adj
-  from public.temp_adjustments
-  where temp = p_temp;
-
-  if not found then
-    raise exception 'Invalid temperature setting: %', p_temp
-      using errcode = 'P0002';
-  end if;
-
-  -- 9. Fetch spin speed adjustment
-  select coalesce(minutes, 0)
-  into v_spin_adj
-  from public.spin_adjustments
-  where spin = p_spin;
-
-  if not found then
-    raise exception 'Invalid spin setting: %', p_spin
-      using errcode = 'P0002';
-  end if;
-
-  -- 10. Server-side authoritative duration calculation
-  -- Formula: duration = base(program) + tempAdj(temp) + spinAdj(spin) + loadAdj(weight, machine.capacity_kg)
-  v_load_minutes := round(p_weight_kg * v_program.per_kg_minutes);
-  v_total_minutes := greatest(1, v_program.base_minutes + v_temp_adj + v_spin_adj + v_load_minutes);
-  v_ends_at := v_started_at + (v_total_minutes || ' minutes')::interval;
-
-  -- 11. Update machine status to in_use
-  update public.machines
-  set status = 'in_use',
-      status_updated_by = v_user_id,
-      status_updated_at = v_started_at
-  where id = p_machine_id;
-
-  -- 12. Create wash session record
-  insert into public.wash_sessions (
-    machine_id,
-    user_id,
-    program_id,
-    temp,
-    spin,
-    weight_kg,
-    started_at,
-    ends_at,
-    status
-  ) values (
-    p_machine_id,
-    v_user_id,
-    p_program_id,
-    p_temp,
-    p_spin,
-    p_weight_kg,
-    v_started_at,
-    v_ends_at,
-    'running'
-  )
-  returning id into v_session_id;
-
-  -- 13. Return session payload
-  return jsonb_build_object(
-    'session_id', v_session_id,
-    'machine_id', p_machine_id,
-    'machine_label', v_machine.label,
-    'program_name', v_program.name,
-    'duration_minutes', v_total_minutes,
-    'started_at', v_started_at,
-    'ends_at', v_ends_at,
-    'status', 'running'
-  );
-end;
-$$;
--- 20261120000004_cron_and_expiry.sql
--- Scheduled session expiry function and pg_cron job
-
--- Expiry function that flips expired running sessions to 'done'
--- and frees the machine to 'available' (pending collection).
-create or replace function public.expire_wash_sessions()
-returns integer
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_expired_count integer := 0;
-  v_session record;
-begin
-  -- Loop through all running sessions where ends_at <= now()
-  for v_session in
-    select id, machine_id
-    from public.wash_sessions
-    where status = 'running'
-      and ends_at <= now()
-    for update
-  loop
-    -- Update session status to done
-    update public.wash_sessions
-    set status = 'done'
-    where id = v_session.id;
-
-    -- Update machine status to available (pending collection)
-    update public.machines
-    set status = 'available',
-        status_updated_at = now(),
-        note = 'Cycle completed. Laundry pending collection.'
-    where id = v_session.machine_id
-      and status = 'in_use';
-
-    v_expired_count := v_expired_count + 1;
-  end loop;
-
-  return v_expired_count;
-end;
-$$;
-
--- Schedule the job via pg_cron if the extension is available in Supabase
+-- Bootstrap Caretaker Account: username_1@washwise.app / caretaker123
 do $$
+declare
+  v_caretaker_id uuid := 'c0000000-0000-0000-0000-000000000001';
+  v_block_id uuid;
 begin
-  if exists (
-    select 1
-    from pg_available_extensions
-    where name = 'pg_cron'
-  ) then
-    create extension if not exists pg_cron;
+  select id into v_block_id from public.hostel_blocks where name = 'Block A' limit 1;
 
-    -- Remove prior job if already scheduled
-    if exists (select 1 from cron.job where jobname = 'washwise_expire_sessions') then
-      perform cron.unschedule('washwise_expire_sessions');
-    end if;
-
-    -- Schedule every minute
-    perform cron.schedule(
-      'washwise_expire_sessions',
-      '* * * * *',
-      'select public.expire_wash_sessions();'
+  if not exists (select 1 from auth.users where email = 'username_1@washwise.app') then
+    insert into auth.users (
+      instance_id,
+      id,
+      aud,
+      role,
+      email,
+      encrypted_password,
+      email_confirmed_at,
+      raw_app_meta_data,
+      raw_user_meta_data,
+      created_at,
+      updated_at
+    ) values (
+      '00000000-0000-0000-0000-000000000000',
+      v_caretaker_id,
+      'authenticated',
+      'authenticated',
+      'username_1@washwise.app',
+      crypt('caretaker123', gen_salt('bf')),
+      now(),
+      '{"provider":"email","providers":["email"]}',
+      '{"name":"Hostel Caretaker","role":"caretaker"}',
+      now(),
+      now()
     );
-  end if;
-exception
-  when others then
-    raise notice 'pg_cron could not be configured: %', SQLERRM;
-end;
-$$;
--- 20261120000005_seed_data.sql
--- Seed data: 1 block, 8 machines with varied capacities, programs, temp and spin adjustments
 
--- 1. Hostel Block
-insert into public.hostel_blocks (id, name)
-values ('a0000000-0000-0000-0000-000000000001', 'Block A')
-on conflict (id) do update set name = excluded.name;
-
--- 2. 8 Machines with varied capacity and initial states
-insert into public.machines (id, block_id, label, capacity_kg, status, note)
-values
-  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', '01', 6.5, 'available', null),
-  ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', '02', 7.0, 'in_use', null),
-  ('b0000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', '03', 7.0, 'available', null),
-  ('b0000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000001', '04', 8.0, 'in_use', null),
-  ('b0000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000001', '05', 6.0, 'available', null),
-  ('b0000000-0000-0000-0000-000000000006', 'a0000000-0000-0000-0000-000000000001', '06', 7.0, 'maintenance', 'Filter cleaning in progress'),
-  ('b0000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-000000000001', '07', 7.5, 'broken', 'Door latch fault'),
-  ('b0000000-0000-0000-0000-000000000008', 'a0000000-0000-0000-0000-000000000001', '08', 8.0, 'available', null)
-on conflict (id) do update set
-  label = excluded.label,
-  capacity_kg = excluded.capacity_kg,
-  status = excluded.status,
-  note = excluded.note;
-
--- 3. Wash Programs
-insert into public.wash_programs (id, name, base_minutes, per_kg_minutes, active)
-values
-  ('normal', 'Normal', 35, 2.0, true),
-  ('quick', 'Quick', 20, 1.0, true),
-  ('heavy', 'Heavy', 45, 3.0, true),
-  ('delicates', 'Delicates', 30, 1.5, true),
-  ('wool', 'Wool', 35, 1.5, true)
-on conflict (id) do update set
-  name = excluded.name,
-  base_minutes = excluded.base_minutes,
-  per_kg_minutes = excluded.per_kg_minutes,
-  active = excluded.active;
-
--- 4. Temperature Adjustments
-insert into public.temp_adjustments (temp, minutes)
-values
-  ('Cold', 0),
-  ('30', 3),
-  ('40', 5),
-  ('60', 8)
-on conflict (temp) do update set
-  minutes = excluded.minutes;
-
--- 5. Spin Adjustments
-insert into public.spin_adjustments (spin, minutes)
-values
-  ('Low', 0),
-  ('Medium', 2),
-  ('High', 4)
-on conflict (spin) do update set
-  minutes = excluded.minutes;
--- 20261120000006_read_running_sessions.sql
--- Allow students in the same block to read active/running wash sessions
--- so they see authoritative time-left and progress on occupied machines.
-
-create policy "Users can read running wash sessions in own block"
-  on public.wash_sessions for select
-  to authenticated
-  using (
-    status = 'running'
-    and machine_id in (
-      select id from public.machines where block_id = public.current_user_block_id()
-    )
-  );
--- 20261120000007_collect_wash_rpc.sql
--- RPC to atomically mark a wash session collected and free the machine to 'available'
-
-create or replace function public.collect_wash(p_session_id uuid)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_user_id uuid;
-  v_session public.wash_sessions%rowtype;
-begin
-  v_user_id := auth.uid();
-  if v_user_id is null then
-    raise exception 'Authentication required' using errcode = '42501';
+    begin
+      insert into auth.identities (
+        id,
+        user_id,
+        identity_data,
+        provider,
+        last_sign_in_at,
+        created_at,
+        updated_at
+      ) values (
+        gen_random_uuid(),
+        v_caretaker_id,
+        format('{"sub":"%s","email":"%s"}', v_caretaker_id, 'username_1@washwise.app')::jsonb,
+        'email',
+        now(),
+        now(),
+        now()
+      );
+    exception when others then
+      null;
+    end;
+  else
+    select id into v_caretaker_id from auth.users where email = 'username_1@washwise.app';
+    update auth.users
+    set encrypted_password = crypt('caretaker123', gen_salt('bf')),
+        email_confirmed_at = now()
+    where id = v_caretaker_id;
   end if;
 
-  select *
-  into v_session
-  from public.wash_sessions
-  where id = p_session_id
-  for update;
+  insert into public.profiles (id, name, role, hostel_block_id)
+  values (v_caretaker_id, 'Hostel Caretaker', 'caretaker', v_block_id)
+  on conflict (id) do update
+  set role = 'caretaker',
+      name = 'Hostel Caretaker',
+      hostel_block_id = v_block_id;
 
-  if not found then
-    raise exception 'Wash session not found' using errcode = 'P0002';
-  end if;
-
-  -- Allow session owner or caretaker to mark collected
-  if v_session.user_id <> v_user_id and public.current_user_role() <> 'caretaker' then
-    raise exception 'Not authorized to collect this session' using errcode = '42501';
-  end if;
-
-  -- Update session status to collected
-  update public.wash_sessions
-  set status = 'collected',
-      collected_at = now()
-  where id = p_session_id;
-
-  -- Update machine status to available
-  update public.machines
-  set status = 'available',
-      status_updated_at = now(),
-      note = null
-  where id = v_session.machine_id;
-
-  return jsonb_build_object(
-    'success', true,
-    'session_id', p_session_id,
-    'machine_id', v_session.machine_id,
-    'collected_at', now()
-  );
-end;
-$$;
--- 20261120000008_caretaker_verify_rpc.sql
--- Caretaker verification and force-clear procedures, plus foreign key to profiles for audit log
-
--- 1. Foreign key from status_log.changed_by to profiles(id)
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'status_log_changed_by_profile_fkey'
-  ) then
-    alter table public.status_log
-      add constraint status_log_changed_by_profile_fkey
-      foreign key (changed_by) references public.profiles(id)
-      on delete set null;
-  end if;
-end;
-$$;
-
--- 2. Caretaker RPC to verify and update machine status and note
-create or replace function public.verify_machine_status(
-  p_machine_id uuid,
-  p_status public.machine_status,
-  p_note text default null
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_user_id uuid;
-  v_role public.user_role;
-  v_machine public.machines%rowtype;
-begin
-  v_user_id := auth.uid();
-  if v_user_id is null then
-    raise exception 'Authentication required' using errcode = '42501';
-  end if;
-
-  v_role := public.current_user_role();
-  if v_role <> 'caretaker' then
-    raise exception 'Unauthorized: Only caretakers can verify machine status' using errcode = '42501';
-  end if;
-
-  select * into v_machine
-  from public.machines
-  where id = p_machine_id
-  for update;
-
-  if not found then
-    raise exception 'Machine not found' using errcode = 'P0002';
-  end if;
-
-  -- Verify caretaker belongs to the same block as the machine
-  if v_machine.block_id <> public.current_user_block_id() then
-    raise exception 'Unauthorized for this hostel block' using errcode = '42501';
-  end if;
-
-  update public.machines
-  set status = p_status,
-      status_updated_at = now(),
-      status_updated_by = v_user_id,
-      note = p_note
-  where id = p_machine_id;
-
-  return jsonb_build_object(
-    'success', true,
-    'machine_id', p_machine_id,
-    'status', p_status,
-    'note', p_note,
-    'verified_at', now()
-  );
-end;
-$$;
-
--- 3. Caretaker RPC to force-clear stuck in-use machines
-create or replace function public.force_clear_machine(
-  p_machine_id uuid,
-  p_reason text default 'Force cleared by caretaker'
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_user_id uuid;
-  v_role public.user_role;
-  v_machine public.machines%rowtype;
-begin
-  v_user_id := auth.uid();
-  if v_user_id is null then
-    raise exception 'Authentication required' using errcode = '42501';
-  end if;
-
-  v_role := public.current_user_role();
-  if v_role <> 'caretaker' then
-    raise exception 'Unauthorized: Only caretakers can force-clear machines' using errcode = '42501';
-  end if;
-
-  select * into v_machine
-  from public.machines
-  where id = p_machine_id
-  for update;
-
-  if not found then
-    raise exception 'Machine not found' using errcode = 'P0002';
-  end if;
-
-  if v_machine.block_id <> public.current_user_block_id() then
-    raise exception 'Unauthorized for this hostel block' using errcode = '42501';
-  end if;
-
-  -- Cancel any running or pending wash sessions on this machine
-  update public.wash_sessions
-  set status = 'cancelled'
-  where machine_id = p_machine_id
-    and status in ('running', 'done');
-
-  -- Free machine to available
-  update public.machines
-  set status = 'available',
-      status_updated_at = now(),
-      status_updated_by = v_user_id,
-      note = p_reason
-  where id = p_machine_id;
-
-  return jsonb_build_object(
-    'success', true,
-    'machine_id', p_machine_id,
-    'status', 'available',
-    'cleared_at', now()
-  );
-end;
-$$;
--- 20261120000009_issue_reports_and_notifications.sql
--- RPC for caretaker to resolve issue reports and optionally update machine status
-
-create or replace function public.resolve_issue_report(
-  p_issue_id uuid,
-  p_machine_status public.machine_status default null,
-  p_status_note text default null
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_user_id uuid;
-  v_role public.user_role;
-  v_issue public.issue_reports%rowtype;
-begin
-  v_user_id := auth.uid();
-  if v_user_id is null then
-    raise exception 'Authentication required' using errcode = '42501';
-  end if;
-
-  v_role := public.current_user_role();
-  if v_role <> 'caretaker' then
-    raise exception 'Unauthorized: Only caretakers can resolve issue reports' using errcode = '42501';
-  end if;
-
-  select * into v_issue
-  from public.issue_reports
-  where id = p_issue_id
-  for update;
-
-  if not found then
-    raise exception 'Issue report not found' using errcode = 'P0002';
-  end if;
-
-  -- Ensure caretaker belongs to the same hostel block as the machine
-  if not exists (
-    select 1 from public.machines
-    where id = v_issue.machine_id
-      and block_id = public.current_user_block_id()
-  ) then
-    raise exception 'Unauthorized for this hostel block' using errcode = '42501';
-  end if;
-
-  -- 1. Mark issue report as resolved
-  update public.issue_reports
-  set resolved_at = now(),
-      resolved_by = v_user_id
-  where id = p_issue_id;
-
-  -- 2. Optionally update machine status and note
-  if p_machine_status is not null then
-    update public.machines
-    set status = p_machine_status,
-        status_updated_at = now(),
-        status_updated_by = v_user_id,
-        note = p_status_note
-    where id = v_issue.machine_id;
-  end if;
-
-  return jsonb_build_object(
-    'success', true,
-    'issue_id', p_issue_id,
-    'resolved_at', now(),
-    'machine_id', v_issue.machine_id,
-    'machine_status', p_machine_status
-  );
-end;
-$$;
+  -- Ensure profile exists for all auth.users (including student sanchitdono3@gmail.com)
+  insert into public.profiles (id, name, role, hostel_block_id)
+  select
+    u.id,
+    coalesce(u.raw_user_meta_data->>'name', u.raw_user_meta_data->>'full_name', split_part(u.email, '@', 1), 'Student'),
+    case when u.raw_user_meta_data->>'role' = 'caretaker' then 'caretaker'::public.user_role else 'student'::public.user_role end,
+    v_block_id
+  FROM auth.users u
+  where u.id <> v_caretaker_id
+  on conflict (id) do update
+  set hostel_block_id = coalesce(profiles.hostel_block_id, v_block_id);
+end $$;

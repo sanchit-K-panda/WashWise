@@ -1,4 +1,4 @@
-import { Tables, WashSessionStatus, MachineStatus } from './database';
+import { Tables, Views, WashSessionStatus, MachineStatus } from './database';
 
 export * from './database';
 
@@ -11,6 +11,7 @@ export type SpinAdjustment = Tables<'spin_adjustments'>;
 export type WashSession = Tables<'wash_sessions'>;
 export type IssueReport = Tables<'issue_reports'>;
 export type StatusLog = Tables<'status_log'>;
+export type MachineBoardRow = Views<'machine_board'>;
 
 export interface StatusLogEntry extends StatusLog {
   profiles?: {
@@ -52,7 +53,7 @@ export interface ActiveWashSession {
   status: WashSessionStatus;
 }
 
-export interface MachineWithSession extends Machine {
+export interface MachineWithSession extends MachineBoardRow {
   activeSession?: ActiveWashSession | null;
   timeLeftMinutes?: number;
   progressPercent?: number;
@@ -85,7 +86,7 @@ export interface StartWashResultPayload {
 
 export interface StartWashResponse {
   success: boolean;
-  session?: StartWashResultPayload;
+  session?: StartWashResultPayload | WashSession;
   error?: string;
   isRaceConflict?: boolean;
 }

@@ -47,8 +47,9 @@ describe('TimerScreen', () => {
       status: 'in_use',
       status_updated_by: null,
       status_updated_at: '',
+      verified_at: null,
+      verified_by: null,
       note: null,
-      created_at: '',
     },
     program: {
       id: 'prog-normal',
@@ -120,7 +121,7 @@ describe('TimerScreen', () => {
   it('renders completion state when time has expired or status is done', async () => {
     const mockDoneSession: WashSessionDetails = {
       ...mockRunningSession,
-      status: 'done',
+      status: 'running',
       ends_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
     };
 

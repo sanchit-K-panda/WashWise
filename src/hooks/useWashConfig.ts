@@ -1,11 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import {
-  fetchMachineById,
-  fetchWashConfig,
-  FALLBACK_PROGRAMS,
-  FALLBACK_TEMPS,
-  FALLBACK_SPINS,
-} from '@/services/wash';
+import { fetchMachineById, fetchWashConfig } from '@/services/wash';
 import { Machine, WashConfig } from '@/types';
 
 export interface UseWashConfigResult {
@@ -34,9 +28,9 @@ export function useWashConfig(machineId?: string): UseWashConfigResult {
   return {
     machine: machineQuery.data || null,
     config: configQuery.data || {
-      programs: FALLBACK_PROGRAMS,
-      tempAdjustments: FALLBACK_TEMPS,
-      spinAdjustments: FALLBACK_SPINS,
+      programs: [],
+      tempAdjustments: [],
+      spinAdjustments: [],
     },
     isLoading: machineQuery.isLoading || configQuery.isLoading,
     isError: machineQuery.isError || configQuery.isError,

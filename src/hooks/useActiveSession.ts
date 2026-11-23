@@ -7,7 +7,7 @@ export function useActiveSession() {
   const userId = user?.id;
 
   const query = useQuery({
-    queryKey: ['active_session', userId],
+    queryKey: ['active-session'],
     queryFn: () => (userId ? fetchActiveUserSession(userId) : null),
     enabled: !!userId,
     staleTime: 1000 * 5,

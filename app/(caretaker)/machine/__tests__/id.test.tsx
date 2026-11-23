@@ -26,8 +26,9 @@ const mockMachine: Machine = {
   status: 'maintenance',
   status_updated_by: 'caretaker-1',
   status_updated_at: '2026-11-20T14:30:00Z',
+  verified_at: null,
+  verified_by: null,
   note: 'Motor diagnostic scheduled',
-  created_at: '',
 };
 
 const mockLogs: StatusLogEntry[] = [
@@ -38,6 +39,7 @@ const mockLogs: StatusLogEntry[] = [
     new_status: 'in_use',
     changed_by: 'user-1',
     changed_at: '2026-11-20T10:00:00Z',
+    note: null,
     profiles: { name: 'Student Alice' },
   },
   {
@@ -47,6 +49,7 @@ const mockLogs: StatusLogEntry[] = [
     new_status: 'maintenance',
     changed_by: 'caretaker-1',
     changed_at: '2026-11-20T14:30:00Z',
+    note: null,
     profiles: { name: 'John Caretaker' },
   },
 ];

@@ -103,24 +103,29 @@ describe('LoginScreen', () => {
     });
   });
 
-  it('switches to caretaker tab and signs in with caretaker credentials', async () => {
+  it('switches to staff sign in and signs in with caretaker credentials', async () => {
     mockSignInWithPassword.mockResolvedValueOnce({ success: true });
 
     const { getByTestId, getByLabelText, getByText } = await render(<LoginScreen />);
 
-    // Switch to Caretaker tab
+    // Switch to Staff mode
     await act(async () => {
-      fireEvent.press(getByLabelText('Caretaker role tab'));
+      fireEvent.press(getByTestId('staff-toggle-button'));
     });
 
     await waitFor(() => {
-      expect(getByText('Caretaker Portal')).toBeTruthy();
-      expect(getByTestId('caretaker-username-input')).toBeTruthy();
-      expect(getByTestId('caretaker-password-input')).toBeTruthy();
+      expect(getByText('Staff sign in')).toBeTruthy();
+      expect(getByTestId('username-input')).toBeTruthy();
+      expect(getByTestId('password-input')).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.press(getByLabelText('Sign in as Caretaker'));
+      fireEvent.changeText(getByTestId('username-input'), 'username_1');
+      fireEvent.changeText(getByTestId('password-input'), 'caretaker123');
+    });
+
+    await act(async () => {
+      fireEvent.press(getByLabelText('Sign in'));
     });
 
     await waitFor(() => {
