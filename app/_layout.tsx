@@ -26,8 +26,10 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 1000 * 30, // 30s fresh: keeps data in memory for instant tab transitions
-      gcTime: 1000 * 60 * 10,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      staleTime: 1000 * 60 * 5, // 5m fresh in memory
+      gcTime: 1000 * 60 * 15,
     },
   },
 });
@@ -50,7 +52,7 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
-  if (!fontsLoaded && !fontError) {
+  if (Platform.OS !== 'web' && !fontsLoaded && !fontError) {
     return (
       <View
         style={{

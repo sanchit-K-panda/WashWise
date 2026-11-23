@@ -40,7 +40,7 @@ export function AppTabBar({
   }
   const insets = customInsets || systemInsets;
   const { activeSession } = useActiveSession();
-  const { openCount } = useIssues();
+  const { openCount } = useIssues(role === 'caretaker');
 
   // If currently on a modal/stack screen without tabs, hide tab bar
   const currentRoute = state.routes[state.index]?.name;
