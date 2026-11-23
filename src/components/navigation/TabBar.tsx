@@ -73,6 +73,7 @@ export function AppTabBar({
         {/* Animated indicator pill background */}
         {activeIndex >= 0 && (
           <View
+            pointerEvents="none"
             style={[
               styles.indicatorPill,
               {
@@ -131,7 +132,7 @@ export function AppTabBar({
             });
 
             if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+              navigation.navigate({ name: route.name, merge: true } as any);
             }
           };
 
@@ -231,6 +232,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 2,
     gap: 1,
+    ...(Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : {}),
   },
   iconContainer: {
     position: 'relative',

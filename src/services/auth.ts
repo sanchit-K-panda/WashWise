@@ -303,7 +303,7 @@ export async function signInWithPassword(
         friendlyError = 'Invalid email/username or password.';
       } else if (msg.includes('Email not confirmed')) {
         friendlyError =
-          'Please confirm your email address before signing in, or disable "Confirm email" in Supabase Auth settings.';
+          'Your email is not confirmed. In Supabase dashboard go to Authentication > Providers > Email and disable Confirm email, then sign in again.';
       } else if (msg.includes('rate limit')) {
         friendlyError = 'Too many attempts. Please try again shortly.';
       } else if (msg.includes('Network') || msg.includes('Failed to fetch')) {

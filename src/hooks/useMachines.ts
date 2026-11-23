@@ -1,7 +1,15 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchMachines, fetchHostelBlock, subscribeToMachineChanges } from '@/services/machines';
+import {
+  fetchMachines,
+  fetchHostelBlock,
+  fetchFirstBlock,
+  subscribeToMachineChanges,
+} from '@/services/machines';
 import { MachineWithSession, HostelBlock } from '@/types';
+
+// Kept for test compatibility — not used as default block at runtime
+export const DEFAULT_BLOCK_ID = 'a0000000-0000-0000-0000-000000000001';
 
 export interface UseMachinesResult {
   machines: MachineWithSession[];
@@ -20,33 +28,39 @@ export interface UseMachinesResult {
   refetch: () => Promise<void>;
 }
 
-export const DEFAULT_BLOCK_ID = 'a0000000-0000-0000-0000-000000000001';
-
 export function useMachines(blockIdInput?: string | null): UseMachinesResult {
-  const blockId = blockIdInput || DEFAULT_BLOCK_ID;
   const queryClient = useQueryClient();
   const [realtimeOffline, setRealtimeOffline] = useState(false);
 
-  // Machines Query (scoped per user block via view)
+  // Machines Query — RLS handles block filtering server-side
   const machinesQuery = useQuery({
     queryKey: ['machines'],
-    queryFn: () => fetchMachines(blockId),
+    queryFn: () => fetchMachines(),
     staleTime: 1000 * 15,
   });
 
-  // Block Info Query
+  // Block Info Query — if we have a blockId from profile, use it; otherwise fetch first block
   const blockQuery = useQuery({
-    queryKey: ['hostel_block', blockId],
-    queryFn: () => fetchHostelBlock(blockId),
+    queryKey: ['hostel_block', blockIdInput ?? 'first'],
+    queryFn: async () => {
+      if (blockIdInput) {
+        return fetchHostelBlock(blockIdInput);
+      }
+      // No block assigned to profile yet — fetch the first block in DB
+      return fetchFirstBlock();
+    },
     staleTime: 1000 * 60 * 5,
   });
 
+  // Determine blockId for realtime subscription (use fetched block if no input)
+  const resolvedBlockId = blockIdInput ?? blockQuery.data?.id ?? null;
+
   // Realtime subscription
   useEffect(() => {
-    if (!blockId) return;
+    if (!resolvedBlockId) return;
 
     const unsubscribe = subscribeToMachineChanges(
-      blockId,
+      resolvedBlockId,
       () => {
         queryClient.invalidateQueries({ queryKey: ['machines'] });
         queryClient.invalidateQueries({ queryKey: ['issues'] });
@@ -63,7 +77,7 @@ export function useMachines(blockIdInput?: string | null): UseMachinesResult {
     return () => {
       unsubscribe();
     };
-  }, [blockId, queryClient]);
+  }, [resolvedBlockId, queryClient]);
 
   const machines = useMemo(() => machinesQuery.data || [], [machinesQuery.data]);
   const block = blockQuery.data || null;
@@ -109,7 +123,7 @@ export function useMachines(blockIdInput?: string | null): UseMachinesResult {
     inUseCount,
     brokenCount,
     maintenanceCount,
-    isLoading: machinesQuery.isLoading,
+    isLoading: machinesQuery.isLoading || blockQuery.isLoading,
     isRefetching: machinesQuery.isRefetching,
     isError: machinesQuery.isError,
     error: machinesQuery.error as Error | null,

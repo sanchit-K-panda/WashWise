@@ -73,6 +73,7 @@ describe('useMachines hook', () => {
     unsubscribeMock = jest.fn();
     jest.spyOn(machineService, 'fetchMachines').mockResolvedValue(mockMachines);
     jest.spyOn(machineService, 'fetchHostelBlock').mockResolvedValue(mockBlock);
+    jest.spyOn(machineService, 'fetchFirstBlock').mockResolvedValue(mockBlock);
     jest
       .spyOn(machineService, 'subscribeToMachineChanges')
       .mockImplementation((_blockId, _cb, onStatus) => {
