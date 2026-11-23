@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WashingMachine, Timer, History, User, ClipboardCheck, Flag } from 'lucide-react-native';
 import { colors } from '@/theme/tokens';
@@ -12,11 +13,11 @@ export interface AppTabBarProps {
     routes: { key: string; name: string }[];
   };
   descriptors: Record<string, { options: { title?: string; href?: string | null } }>;
-  navigation: {
-    emit: (event: { type: string; target: string; canPreventDefault: boolean }) => {
+  navigation?: {
+    emit?: (event: { type: string; target: string; canPreventDefault: boolean }) => {
       defaultPrevented: boolean;
     };
-    navigate: (name: string) => void;
+    navigate?: (name: any) => void;
   };
   insets?: { top: number; bottom: number; left: number; right: number };
   role: 'student' | 'caretaker';
@@ -29,6 +30,7 @@ export function AppTabBar({
   insets: customInsets,
   role,
 }: AppTabBarProps) {
+  const router = useRouter();
   let systemInsets = { top: 0, bottom: 0, left: 0, right: 0 };
   try {
     // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -125,14 +127,41 @@ export function AppTabBar({
           const iconColor = isFocused ? activeColor : inactiveColor;
 
           const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
+            let defaultPrevented = false;
+            try {
+              if (navigation && typeof navigation.emit === 'function') {
+                const event = navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                });
+                defaultPrevented = event?.defaultPrevented || false;
+              }
+            } catch {
+              defaultPrevented = false;
+            }
 
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate({ name: route.name, merge: true } as any);
+            if (!isFocused && !defaultPrevented) {
+              try {
+                if (navigation && typeof navigation.navigate === 'function') {
+                  navigation.navigate(route.name);
+                  return;
+                }
+              } catch {
+                // fall through to expo-router router
+              }
+
+              // Fallback navigation directly via expo-router
+              if (role === 'student') {
+                if (routeName === 'index') router.navigate('/(student)');
+                else if (routeName === 'wash') router.navigate('/(student)/wash');
+                else if (routeName === 'history') router.navigate('/(student)/history');
+                else if (routeName === 'account') router.navigate('/(student)/account');
+              } else {
+                if (routeName === 'index') router.navigate('/(caretaker)');
+                else if (routeName === 'issues') router.navigate('/(caretaker)/issues');
+                else if (routeName === 'account') router.navigate('/(caretaker)/account');
+              }
             }
           };
 
